@@ -1,0 +1,11 @@
+{
+  "canisters": {
+    "clearing_house": {
+      "candid": "src/clearing_house.did",
+      "package": "clearing_house",
+      "type": "rust"
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

@@ -1,0 +1,11 @@
+[package]
+name = "clearing_house"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+candid = "0.10"
+ic-cdk = "0.18.5"
+ciborium = "0.2.1"
+futures = "0.3"
+ic-stable-structures = "0.7.0"
