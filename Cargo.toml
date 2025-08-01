@@ -9,3 +9,7 @@ ic-cdk = "0.18.5"
 ciborium = "0.2.1"
 futures = "0.3"
 ic-stable-structures = "0.7.0"
+bincode = "2.0.1"
+primitive-types = "0.13.1"
+rust_decimal = { version = "1.37", features = ["macros"] }
+

@@ -1,6 +1,10 @@
-use super::math::{_ONE_PERCENT, _calc_shares, _calc_shares_value};
+use super::math::_ONE_PERCENT;
+use bincode::{Decode, Encode};
 
 pub type Amount = u128;
+pub type Time = u64;
+
+#[derive(Encode, Decode)]
 pub enum AssetClass {
     /// The cryptocurrency asset class.
     Cryptocurrency,
@@ -14,6 +18,7 @@ impl Default for AssetClass {
     }
 }
 
+#[derive(Encode, Decode, Default)]
 pub struct Asset {
     /// The symbol/code of the asset.
     pub symbol: String,
@@ -103,57 +108,6 @@ pub struct OtherError {
 }
 
 pub type GetExchangeRateResult = Result<ExchangeRate, ExchangeRateError>;
-
-pub struct BiasDetails {
-    traders_net_volume: u128,
-    total_shares: u128,
-    house_volume: i128,
-    house_units: i128,
-}
-
-impl BiasDetails {
-    pub fn add_volume(&mut self, delta: u128) -> Amount {
-        let volume_share = _calc_shares(delta, self.total_shares, self.traders_net_volume);
-        self.total_shares += volume_share;
-        self.traders_net_volume += delta;
-        return volume_share;
-    }
-
-    pub fn remove_volume(&mut self, delta: Amount) -> Amount {
-        let value = _calc_shares_value(delta, self.total_shares, self.traders_net_volume);
-        self.traders_net_volume -= value;
-        self.total_shares -= delta;
-        return value;
-    }
-
-    pub fn update_house_position(&mut self, delta_house_volume: i128, delta_units: i128) {
-        self.house_volume += delta_house_volume;
-        self.house_units += delta_units
-    }
-}
-
-pub struct BiasTracker {
-    pub long: BiasDetails,
-    pub short: BiasDetails,
-}
-
-impl BiasTracker {
-    pub fn add_volume(&mut self, delta: Amount, long: bool) -> Amount {
-        if long {
-            self.long.add_volume(delta)
-        } else {
-            self.short.add_volume(delta)
-        }
-    }
-
-    pub fn remove_volume(&mut self, delta: Amount, long: bool) -> Amount {
-        if long {
-            self.long.remove_volume(delta)
-        } else {
-            self.short.remove_volume(delta)
-        }
-    }
-}
 
 pub fn _percentage<T>(x: u64, value: T) -> T
 where
