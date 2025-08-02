@@ -1,46 +1,12 @@
 use bincode::{self, Decode, Encode};
-use core::time;
-use ic_cdk::api::time;
 
-use rust_decimal::{Decimal, dec};
 use std::borrow::Cow;
 
 use ic_stable_structures::storable::{Bound, Storable};
 
 use crate::{
-    funding::FundingManager,
-    math::{_percentage, mul_div},
-    types::Asset,
-    vault::Vault,
+    bias::Bias, funding::FundingManager, math::mul_div, pricing::PricingManager, types::Asset,
 };
-
-type Time = u64;
-type Amount = u128;
-
-const ONE_SECOND: u64 = 1_000_000_000;
-
-const ONE_HOUR: u64 = 3_600_000_000_000;
-
-#[derive(Encode, Decode, Default)]
-pub struct Price {
-    pub price: u64,
-    pub decimals: u32,
-    pub last_fetched: Time,
-}
-
-impl Price {
-    fn within_bound(&self, entry_price: u64, slippage: u64, long: bool) -> bool {
-        let perc = _percentage(slippage, entry_price);
-
-        if long {
-            return entry_price + perc >= self.price;
-        } else {
-            let fact = Decimal::from_i128_with_scale(100, 6);
-            let cam = fact / dec!(20);
-            return entry_price - perc <= self.price * u64::MAX;
-        }
-    }
-}
 
 #[derive(Encode, Decode, Default)]
 pub struct MarketState {
@@ -56,9 +22,9 @@ pub struct MarketState {
 #[derive(Encode, Decode, Default)]
 pub struct MarketDetails {
     pub base_asset: Asset,
-    pub bias_tracker: BiasTracker,
+    pub bias_tracker: Bias,
     pub funding_manager: FundingManager,
-    pub price: Price,
+    pub price: PricingManager,
     pub state: MarketState,
 }
 
@@ -74,7 +40,7 @@ impl MarketDetails {
             ..
         } = self;
 
-        let BiasTracker { long, short } = bias_tracker;
+        let Bias { long, short } = bias_tracker;
 
         let current_funding_factor_ps = funding_manager.current_funding_factor_ps();
 
@@ -90,18 +56,23 @@ impl MarketDetails {
             // shorts pay long
 
             short.update_cumulative_funding_factor(majority_funding_fee);
+
+            // long fee = (majority funding * short open interest)/ long_open_interest
             let long_funding_fee = mul_div(
                 majority_funding_fee.abs() as u128,
-                long_open_interest,
                 short_open_interest,
+                long_open_interest,
             ) * duration;
             long.update_cumulative_funding_factor(long_funding_fee as i128);
         } else {
-            long.update_cumulative_funding_factor(majority_funding_fee);
+            //longs pay short
+            long.update_cumulative_funding_factor(majority_funding_fee * -1);
+
+            // short fee  = (majority_funding_fee * long open interest) / short_open_interest
             let short_funding_fee = mul_div(
                 majority_funding_fee.abs() as u128,
-                short_open_interest,
                 long_open_interest,
+                short_open_interest,
             ) * duration;
             short.update_cumulative_funding_factor(short_funding_fee as i128)
         }
@@ -188,70 +159,5 @@ impl Storable for MarketDetails {
                 );
             }
         }
-    }
-}
-
-#[derive(Encode, Decode, Default)]
-pub struct BiasTracker {
-    pub long: BiasDetails,
-    pub short: BiasDetails,
-}
-
-impl BiasTracker {
-    pub fn long_short_diff(&self) -> i128 {
-        let Self { long, short } = self;
-        long.traders_open_interest as i128 - short.traders_open_interest as i128
-    }
-
-    pub fn total_open_interest(&self) -> u128 {
-        let Self { long, short } = self;
-        long.traders_open_interest + short.traders_open_interest
-    }
-
-    // pub fn add_volume(&mut self, delta: Amount, long: bool) -> Amount {
-    //     if long {
-    //         self.long.add_volume(delta)
-    //     } else {
-    //         self.short.add_volume(delta)
-    //     }
-    // }
-
-    // pub fn remove_volume(&mut self, delta: Amount, long: bool) -> Amount {
-    //     if long {
-    //         self.long.remove_volume(delta)
-    //     } else {
-    //         self.short.remove_volume(delta)
-    //     }
-    // }
-}
-
-#[derive(Encode, Decode, Default)]
-pub struct BiasDetails {
-    traders_open_interest: u128,
-    house_open_interest: u128,
-    house_position_size: u128,
-    cummulative_funding_factor: i128,
-    cummulativw_borrowing_factor: u128,
-}
-
-impl BiasDetails {
-    fn update(&mut self, delta_toi: i128, delta_hoi: i128, delta_hps: i128) {
-        let Self {
-            traders_open_interest,
-            house_open_interest,
-            house_position_size,
-            ..
-        } = *self;
-
-        self.traders_open_interest = ((traders_open_interest as i128) + delta_toi) as u128;
-        self.house_open_interest = ((house_open_interest as i128) + delta_hoi) as u128;
-        self.house_position_size = ((house_position_size as i128) + delta_hps) as u128;
-    }
-
-    fn update_cumulative_funding_factor(&mut self, delta_cfr: i128) {
-        self.cummulative_funding_factor += delta_cfr;
-    }
-    fn traders_open_interest(&self) -> u128 {
-        self.traders_open_interest
     }
 }

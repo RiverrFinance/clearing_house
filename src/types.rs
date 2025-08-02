@@ -1,10 +1,12 @@
 use super::math::_ONE_PERCENT;
 use bincode::{Decode, Encode};
+use candid::CandidType;
+use serde::Deserialize;
 
 pub type Amount = u128;
 pub type Time = u64;
 
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Deserialize, CandidType)]
 pub enum AssetClass {
     /// The cryptocurrency asset class.
     Cryptocurrency,
@@ -18,7 +20,7 @@ impl Default for AssetClass {
     }
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(Encode, Decode, Deserialize, Default, CandidType)]
 pub struct Asset {
     /// The symbol/code of the asset.
     pub symbol: String,
@@ -26,6 +28,7 @@ pub struct Asset {
     pub class: AssetClass,
 }
 
+#[derive(CandidType, Deserialize)]
 pub struct GetExchangeRateRequest {
     /// The base asset, i.e., the first asset in a currency pair. For example,
     /// ICP is the base asset in the currency pair ICP/USD.
@@ -37,6 +40,7 @@ pub struct GetExchangeRateRequest {
     pub timestamp: Option<u64>,
 }
 
+#[derive(CandidType, Deserialize)]
 pub struct ExchangeRateMetadata {
     /// The scaling factor for the exchange rate and the standard deviation.
     pub decimals: u32,
@@ -54,6 +58,7 @@ pub struct ExchangeRateMetadata {
     pub forex_timestamp: Option<u64>,
 }
 
+#[derive(CandidType, Deserialize)]
 pub struct ExchangeRate {
     /// The base asset.
     pub base_asset: Asset,
@@ -67,6 +72,7 @@ pub struct ExchangeRate {
     pub metadata: ExchangeRateMetadata,
 }
 
+#[derive(CandidType, Deserialize)]
 pub enum ExchangeRateError {
     /// Returned when the canister receives a call from the anonymous principal.
     AnonymousPrincipalNotAllowed,
@@ -100,6 +106,7 @@ pub enum ExchangeRateError {
     Other(OtherError),
 }
 
+#[derive(CandidType, Deserialize)]
 pub struct OtherError {
     /// The identifier for the error that occurred.
     pub code: u32,

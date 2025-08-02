@@ -39,7 +39,7 @@ pub struct LockDetails {
 
 #[derive(Encode, Default, Decode)]
 pub struct Vault {
-    pub max_vault_utiliza: u64,
+    pub max_vault_utilization: u64,
     pub debt: u128,
     pub free_liquidity: Amount,
     // Note this does not track rewards for locking

@@ -72,6 +72,22 @@ where
     ((T::from(x)) * value) / T::from(100 * _ONE_PERCENT)
 }
 
+pub fn diff(a: u128, b: u128) -> u128 {
+    if a > b { a - b } else { b - a }
+}
+pub fn within_bound(entry_value: u64, slippage: u128, long: bool) -> bool {
+    // let perc = _percentage(slippage, entry_price);
+
+    //    if long {
+    //        return entry_price + perc >= self.price;
+    //    } else {
+    //        let fact = Decimal::from_i128_with_scale(100, 6);
+    //        let cam = fact / dec!(20);
+    //        return entry_price - perc <= self.price * u64::MAX;
+    //    }
+    todo!()
+}
+
 pub fn mul_div(a: u128, b: u128, c: u128) -> u128 {
     let result = (U256::from(a) * U256::from(b)) / U256::from(c);
     u256_to_u128_native(result)

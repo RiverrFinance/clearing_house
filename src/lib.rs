@@ -89,9 +89,11 @@ fn get_user_balance(user: Principal) -> Amount {
     USERS_BALANCES.with_borrow(|tag| tag.get(&user).unwrap_or_default())
 }
 
+pub mod bias;
 pub mod floatmath;
 pub mod funding;
 pub mod market;
 pub mod math;
+pub mod pricing;
 pub mod types;
 pub mod vault;
