@@ -1,14 +1,7 @@
-use core::time;
-
 use bincode::{Decode, Encode};
-use candid::Principal;
 use ic_cdk::api::time as now;
-use ic_cdk::call::Call;
 
-use crate::{
-    math::{_percentage, apply_exponent, apply_precision, diff, to_precision},
-    types::{Asset, GetExchangeRateRequest, GetExchangeRateResult},
-};
+use crate::math::{apply_exponent, apply_precision, diff};
 
 type Time = u64;
 
@@ -22,7 +15,7 @@ pub struct PricingManager {
 }
 
 impl PricingManager {
-    pub fn fetch_price_within_interval(&self, interval: u64) -> Option<u128> {
+    pub fn get_price_within_interval(&self, interval: u64) -> Option<u128> {
         if self.last_fetched + interval >= now() {
             return Some(self.price);
         } else {

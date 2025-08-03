@@ -1,12 +1,18 @@
 use bincode::{self, Decode, Encode};
 
-use std::borrow::Cow;
+use std::{borrow::Cow, collections};
 
 use ic_stable_structures::storable::{Bound, Storable};
 
 use crate::{
-    bias::Bias, funding::FundingManager, math::mul_div, pricing::PricingManager, types::Asset,
+    bias::Bias,
+    funding::FundingManager,
+    math::{diff, mul_div, to_precision},
+    pricing::PricingManager,
+    types::Asset,
 };
+
+pub const MAX_ALLOWED_PRICE_CHANGE_INTERVAL: u64 = 600_000_000_000;
 
 #[derive(Encode, Decode, Default)]
 pub struct MarketState {
@@ -14,21 +20,138 @@ pub struct MarketState {
     pub max_pnl: u64,
     pub min_collateral: u128,
     pub execution_fee: u128,
-    pub cummulative_borrowing_rate: u64,
-    pub price_impact_exponent: u8,
-    pub price_impact_factor: u8,
 }
 
 #[derive(Encode, Decode, Default)]
 pub struct MarketDetails {
     pub base_asset: Asset,
+    pub token_identifier: u128,
     pub bias_tracker: Bias,
     pub funding_manager: FundingManager,
-    pub price: PricingManager,
+    pub pricing_manager: PricingManager,
     pub state: MarketState,
+    pub total_deposit: u128,
+    pub max_position_reserve: u128,
+    pub positions_reserve: u128,
 }
 
 impl MarketDetails {
+    fn calculate_price_impact_open_position(&self, open_interest: u128) -> i128 {
+        let Self {
+            bias_tracker,
+            pricing_manager,
+            ..
+        } = self;
+        let current_net_long_open_interest = bias_tracker.long.traders_open_interest();
+        let current_net_short_open_interest = bias_tracker.short.traders_open_interest();
+
+        let initial_diff = bias_tracker.long_short_open_interest_diff().abs() as u128;
+
+        let next_diff = (current_net_long_open_interest + open_interest) as i128
+            - current_net_short_open_interest as i128;
+
+        let same_side_rebalance =
+            (initial_diff > 0 && next_diff > 0) || (initial_diff < 0 && next_diff < 0);
+        let price_impact_fee;
+        if same_side_rebalance {
+            price_impact_fee = pricing_manager
+                .get_price_impact_for_same_side_rebalance(initial_diff, next_diff.abs() as u128);
+        } else {
+            price_impact_fee = pricing_manager
+                .get_price_impact_for_crossover_rebalance(initial_diff, next_diff.abs() as u128);
+        }
+        return price_impact_fee;
+    }
+
+    fn calculate_reserve_in_for_opening_position(
+        &mut self,
+        price: u128,
+        long: bool,
+        max_profit: u128,
+    ) -> u128 {
+        let mut added_reserve = max_profit;
+        let Self { bias_tracker, .. } = self;
+        let current_unrealized_reserve_for_long =
+            bias_tracker.current_unrealised_reserve_for_longs(price);
+
+        let current_unrealized_reserve_for_short =
+            bias_tracker.current_unrealised_reserve_for_shorts(price);
+
+        let condition = current_unrealized_reserve_for_short > current_unrealized_reserve_for_long;
+
+        let reserve_in_excess = condition && long || !condition && !long;
+
+        if reserve_in_excess {
+            let diff_in_unrealised_reserve = diff(
+                current_unrealized_reserve_for_short,
+                current_unrealized_reserve_for_long,
+            );
+
+            // checks if max _profit exceeds remaining reserve
+            if max_profit > diff_in_unrealised_reserve {
+                added_reserve = max_profit - diff_in_unrealised_reserve
+            } else {
+                added_reserve = 0
+            }
+        }
+
+        return added_reserve;
+    }
+
+    ////
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
+    fn _open_psoition(&mut self, collateral: u128, debt: u128, max_profit: u128, long: bool) {
+        let free_liuqidity = self.free_liquidity();
+        // fail conditions
+
+        let Self {
+            pricing_manager, ..
+        } = self;
+
+        let price_update =
+            pricing_manager.get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
+        // refactor later
+        let price = price_update.unwrap_or(0);
+
+        let added_reserve = self.calculate_reserve_in_for_opening_position(price, long, max_profit);
+
+        if debt + added_reserve >= free_liuqidity {};
+        if debt + added_reserve + self.positions_reserve > self.max_position_reserve {};
+
+        let position_open_interest = debt + collateral;
+
+        let units = to_precision(max_profit, price);
+
+        self.update_bias_details(
+            position_open_interest as i128,
+            max_profit as i128,
+            units as i128,
+            long,
+        );
+
+        // get the amount
+    }
+
+    fn update_bias_details(
+        &mut self,
+        delta_toi: i128,
+        delta_ra: i128,
+        delta_hpu: i128,
+        is_long_position: bool,
+    ) {
+        let Self { bias_tracker, .. } = self;
+
+        bias_tracker.update_bias_details(delta_toi, delta_ra, delta_hpu, is_long_position);
+    }
+
+    fn free_liquidity(&self) -> u128 {
+        self.total_deposit - self.positions_reserve
+    }
     /// Update funding
     ///
     /// functionis called on interval for payment of funding fees

@@ -17,7 +17,6 @@ type Time = u64;
 
 #[derive(Copy, Clone, Decode, Encode, PartialEq, Eq)]
 pub enum LockSpan {
-    Instant,
     Month2,
     Month6,
     Year,
@@ -25,7 +24,7 @@ pub enum LockSpan {
 
 impl Default for LockSpan {
     fn default() -> Self {
-        return LockSpan::Instant;
+        return LockSpan::Month2;
     }
 }
 
@@ -37,22 +36,28 @@ pub struct LockDetails {
     pub pre_earnings: Amount,
 }
 
+/// Vault handles all vault activities
+
 #[derive(Encode, Default, Decode)]
 pub struct Vault {
     pub max_vault_utilization: u64,
+    // total amount borrowed as debt
     pub debt: u128,
+    // Amount still unutllised
     pub free_liquidity: Amount,
     // Note this does not track rewards for locking
     pub total_vault_value: Amount,
+
+    // total pool token minted
     pub total_vault_share_minted: Amount,
-    pub span0_details: LockDurationDetails,
+
+    /// Lockdetails
     pub span2_details: LockDurationDetails,
     pub span6_details: LockDurationDetails,
     pub span12_details: LockDurationDetails,
 }
 
 impl Vault {
-    pub fn _utilization_rate() {}
     /// Create Stake function
     ///
     ///
@@ -94,10 +99,9 @@ impl Vault {
     /// - 6 month staking span (span6) with 6x duration multiplier
     /// - 12 month staking span (span12) with 12x duration multiplier
     pub fn _update_fees_across_span(&mut self, fee_earned: Amount) {
-        self.span0_details._update_earnings(fee_earned, None);
         self.span2_details._update_earnings(fee_earned, Some(2));
         self.span6_details._update_earnings(fee_earned, Some(6));
-        self.span0_details._update_earnings(fee_earned, Some(12));
+        self.span12_details._update_earnings(fee_earned, Some(12));
     }
 
     /// Calculate Stake Earnings Function
@@ -113,9 +117,6 @@ impl Vault {
     pub fn _calc_lock_earnings(&self, ref_stake: LockDetails) -> Amount {
         let lifetime_earnings_per_token;
         match ref_stake.stake_span {
-            LockSpan::Instant => {
-                lifetime_earnings_per_token = self.span0_details.lifetime_earnings_per_token
-            }
             LockSpan::Month2 => {
                 lifetime_earnings_per_token = self.span2_details.lifetime_earnings_per_token
             }
@@ -143,9 +144,6 @@ impl Vault {
     ///  - Earnings :The amount earned by the particular stake for the entire staking duration
     pub fn _open_lock(&mut self, reference_stake: LockDetails) {
         match reference_stake.stake_span {
-            LockSpan::Instant => self
-                .span0_details
-                .update_total_locked(reference_stake.amount, false),
             LockSpan::Month2 => self
                 .span2_details
                 .update_total_locked(reference_stake.amount, false),
@@ -188,14 +186,6 @@ impl Vault {
         let expiry_time;
 
         match specific_span {
-            LockSpan::Instant => {
-                span_init_total_locked = self.span0_details.total_locked;
-
-                span_lifetime_earnings_per_token =
-                    self.span0_details._lifetime_earnings_per_token();
-                self.span0_details.update_total_locked(amount, lock);
-                expiry_time = ic_cdk::api::time()
-            }
             LockSpan::Month2 => {
                 span_init_total_locked = self.span2_details.total_locked;
 

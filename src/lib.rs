@@ -45,45 +45,45 @@ fn add_market(market: MarketDetails) {
     })
 }
 
-fn open_position(
-    market_index: u64,
-    margin: u128,
-    leverage_x10: u8,
-    entry_price: u64,
-    slippage: u64,
-    max_pnl: u64,
-    long: bool,
-) {
-    MARKETS.with_borrow(|tag| {
-        let MarketDetails { price, state, .. } = tag.get(market_index).unwrap();
+// fn open_position(
+//     market_index: u64,
+//     margin: u128,
+//     leverage_x10: u8,
+//     entry_price: u64,
+//     slippage: u64,
+//     max_pnl: u64,
+//     long: bool,
+// ) {
+//     MARKETS.with_borrow(|tag| {
+//         let MarketDetails { price, state, .. } = tag.get(market_index).unwrap();
 
-        let MarketState {
-            min_collateral,
-            max_leverage_x10,
-            max_pnl,
-            execution_fee,
-            ..
-        } = state;
+//         let MarketState {
+//             min_collateral,
+//             max_leverage_x10,
+//             max_pnl,
+//             execution_fee,
+//             ..
+//         } = state;
 
-        assert!(margin >= min_collateral, "I");
-        assert!(leverage_x10 < max_leverage_x10, "II");
-        assert!(max_pnl >= state.max_pnl, "III");
+//         assert!(margin >= min_collateral, "I");
+//         assert!(leverage_x10 < max_leverage_x10, "II");
+//         assert!(max_pnl >= state.max_pnl, "III");
 
-        let user_balance = get_user_balance(msg_caller());
+//         let user_balance = get_user_balance(msg_caller());
 
-        assert!(user_balance >= margin + execution_fee, "");
+//         assert!(user_balance >= margin + execution_fee, "");
 
-        let debt = (u128::from(leverage_x10 - 10) * margin) / 10;
+//         let debt = (u128::from(leverage_x10 - 10) * margin) / 10;
 
-        let max_profit = _percentage(max_pnl, debt + margin);
+//         let max_profit = _percentage(max_pnl, debt + margin);
 
-        if ic_cdk::api::time() - price.last_fetched <= ONE_HOUR {
-        } else {
-        }
+//         if ic_cdk::api::time() - price.last_fetched <= ONE_HOUR {
+//         } else {
+//         }
 
-        // let max_units = (max_profit * price.decimals as u128) / (price.price as u128);
-    })
-}
+//         // let max_units = (max_profit * price.decimals as u128) / (price.price as u128);
+//     })
+//}
 
 fn get_user_balance(user: Principal) -> Amount {
     USERS_BALANCES.with_borrow(|tag| tag.get(&user).unwrap_or_default())
