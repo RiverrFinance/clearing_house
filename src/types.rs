@@ -1,12 +1,16 @@
+use std::borrow::Cow;
+
 use super::math::_ONE_PERCENT;
-use bincode::{Decode, Encode};
-use candid::CandidType;
-use serde::Deserialize;
+
+use candid::{CandidType, Principal};
+use ic_cdk::call::Call;
+use ic_stable_structures::{Storable, storable::Bound};
+use serde::{Deserialize, Serialize};
 
 pub type Amount = u128;
 pub type Time = u64;
 
-#[derive(Encode, Decode, Deserialize, CandidType)]
+#[derive(Deserialize, Serialize, Copy, Clone, CandidType)]
 pub enum AssetClass {
     /// The cryptocurrency asset class.
     Cryptocurrency,
@@ -20,7 +24,7 @@ impl Default for AssetClass {
     }
 }
 
-#[derive(Encode, Decode, Deserialize, Default, CandidType)]
+#[derive(Clone, Serialize, Deserialize, Default, CandidType)]
 pub struct Asset {
     /// The symbol/code of the asset.
     pub symbol: String,
@@ -116,9 +120,21 @@ pub struct OtherError {
 
 pub type GetExchangeRateResult = Result<ExchangeRate, ExchangeRateError>;
 
-pub fn _percentage<T>(x: u64, value: T) -> T
-where
-    T: std::ops::Mul<Output = T> + std::ops::Div<Output = T> + From<u64>,
-{
-    ((T::from(x)) * value) / T::from(100 * _ONE_PERCENT)
+pub struct XRC {
+    canister_id: Principal,
+}
+
+impl XRC {
+    pub fn init(canister_id: Principal) -> Self {
+        XRC { canister_id }
+    }
+
+    /// tries to fetch the current exchange rate of the pair and returns the result
+    async fn _get_exchange_rate(&self, request: GetExchangeRateRequest) -> GetExchangeRateResult {
+        let call = Call::unbounded_wait(self.canister_id, "get_exchange_rate")
+            .with_arg(request)
+            .with_cycles(1_000_000_000);
+
+        return call.await.unwrap().candid().unwrap();
+    }
 }

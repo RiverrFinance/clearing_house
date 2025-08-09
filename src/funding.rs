@@ -1,7 +1,7 @@
-use bincode::{Decode, Encode};
 use ic_cdk::api::time;
+use serde::{Deserialize, Serialize};
 
-use crate::math::{apply_exponent, apply_precision, bound_magnitude, to_precision};
+use crate::math::{apply_exponent, apply_precision, bound_magnitude_signed, to_precision};
 
 #[derive(PartialEq, Eq)]
 enum FundingChangeType {
@@ -10,7 +10,7 @@ enum FundingChangeType {
     Nochange,
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct FundingManager {
     /// Last time updated timetamp
     pub last_time_updated: u64,
@@ -46,6 +46,11 @@ impl FundingManager {
     /// Update FUnding factor per second
     ///
     /// Updates the current funding factor based
+    ///
+    /// Funding fee per_sec is calculated as
+    /// funding_fee_per_sec =f(unding_factor * (longshort difference)^ (funding_factor_exponent))/ (total_open_interest)
+    ///
+    /// See README.md for more technical overview  info
     pub fn _update_funding_factor_ps(&mut self, long_short_diff: i128, total_open_interest: u128) {
         let Self {
             threshold_decrease_funding,
@@ -63,9 +68,9 @@ impl FundingManager {
 
         let long_short_diff_mag = long_short_diff.abs() as u128;
 
-        //    if long_short_diff == 0 {
-        //        self.next_funding_factor_ps = 0
-        //    }
+        if long_short_diff == 0 {
+            self.next_funding_factor_ps = 0
+        }
 
         // (imbalance) ^ (funding_expoenent_factor)
         let long_short_after_exponent =
@@ -143,7 +148,7 @@ impl FundingManager {
             }
         };
 
-        next_saved_funding_factor_ps = bound_magnitude(
+        next_saved_funding_factor_ps = bound_magnitude_signed(
             next_saved_funding_factor_ps,
             min_funding_factor_ps,
             max_funding_factor_ps,

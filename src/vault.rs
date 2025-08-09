@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use bincode::{Decode, Encode};
 use ic_stable_structures::{Storable, storable::Bound};
 
 use crate::{
@@ -15,7 +14,7 @@ const MONTH: Time = 2_628_000_000_000_000;
 type Amount = u128;
 type Time = u64;
 
-#[derive(Copy, Clone, Decode, Encode, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum LockSpan {
     Month2,
     Month6,
@@ -28,7 +27,7 @@ impl Default for LockSpan {
     }
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(Default)]
 pub struct LockDetails {
     pub stake_span: LockSpan,
     pub amount: Amount,
@@ -38,15 +37,15 @@ pub struct LockDetails {
 
 /// Vault handles all vault activities
 
-#[derive(Encode, Default, Decode)]
+#[derive(Default)]
 pub struct Vault {
     pub max_vault_utilization: u64,
-    // total amount borrowed as debt
-    pub debt: u128,
+    // // total amount borrowed as debt
+    // pub debt: u128,
     // Amount still unutllised
     pub free_liquidity: Amount,
     // Note this does not track rewards for locking
-    pub total_vault_value: Amount,
+    pub total_liquidity_in_vault: Amount,
 
     // total pool token minted
     pub total_vault_share_minted: Amount,
@@ -220,88 +219,13 @@ impl Vault {
     }
 }
 
-impl Storable for Vault {
-    fn to_bytes(&self) -> Cow<'_, [u8]> {
-        let mut slice = [0u8; 500];
-        let length =
-            bincode::encode_into_slice(self, &mut slice, bincode::config::standard()).unwrap();
-
-        let slice = &slice[..length];
-        Cow::Owned(slice.to_vec())
-    }
-
-    /// Converts the element into an owned byte vector.
-    ///
-    /// This method consumes `self` and avoids cloning when possible.
-    fn into_bytes(self) -> Vec<u8> {
-        let mut slice = [0u8; 500];
-        let length =
-            bincode::encode_into_slice(self, &mut slice, bincode::config::standard()).unwrap();
-
-        let slice = &slice[..length];
-        slice.to_vec()
-    }
-
-    /// Converts bytes into an element.
-    fn from_bytes(bytes: Cow<[u8]>) -> Self {
-        bincode::decode_from_slice(bytes.as_ref(), bincode::config::standard())
-            .expect("Failed to decode MarketDetails")
-            .0
-    }
-
-    /// The size bounds of the type.
-    const BOUND: Bound = Bound::Unbounded;
-
-    /// Like `to_bytes`, but checks that bytes conform to declared bounds.
-    fn to_bytes_checked(&self) -> Cow<'_, [u8]> {
-        let bytes = self.to_bytes();
-        Self::check_bounds(&bytes);
-        bytes
-    }
-
-    /// Like `into_bytes`, but checks that bytes conform to declared bounds.
-    fn into_bytes_checked(self) -> Vec<u8>
-    where
-        Self: Sized,
-    {
-        let bytes = self.into_bytes();
-        Self::check_bounds(&bytes);
-        bytes
-    }
-
-    #[inline]
-    fn check_bounds(bytes: &[u8]) {
-        if let Bound::Bounded {
-            max_size,
-            is_fixed_size,
-        } = Self::BOUND
-        {
-            let actual = bytes.len();
-            if is_fixed_size {
-                assert_eq!(
-                    actual, max_size as usize,
-                    "expected a fixed-size element with length {} bytes, but found {} bytes",
-                    max_size, actual
-                );
-            } else {
-                assert!(
-                    actual <= max_size as usize,
-                    "expected an element with length <= {} bytes, but found {} bytes",
-                    max_size,
-                    actual
-                );
-            }
-        }
-    }
-}
-
 pub struct LiquidityManagerDetails {
     pub asset: Asset,
     pub virtual_asset: Asset,
     pub min_amount: Amount,
 }
 
-#[derive(Encode, Default, Decode)]
+#[derive(Default)]
 pub struct LockDurationDetails {
     /// The total Amount earned by a single token since span creation
     pub lifetime_earnings_per_token: Amount,

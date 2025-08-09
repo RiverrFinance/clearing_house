@@ -1,11 +1,11 @@
-use bincode::{Decode, Encode};
 use ic_cdk::api::time as now;
+use serde::{Deserialize, Serialize};
 
 use crate::math::{apply_exponent, apply_precision, diff};
 
 type Time = u64;
 
-#[derive(Encode, Decode, Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct PricingManager {
     pub price: u128,
     pub last_fetched: Time,
@@ -22,7 +22,7 @@ impl PricingManager {
             return None;
         }
     }
-    pub async fn update_price(&mut self, price: u128) {
+    pub fn update_price(&mut self, price: u128) {
         self.price = price;
         self.last_fetched = now()
         // let Self { xrc_canister, .. } = self;
