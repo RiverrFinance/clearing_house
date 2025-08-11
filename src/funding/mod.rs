@@ -1,7 +1,7 @@
 use ic_cdk::api::time;
 use serde::{Deserialize, Serialize};
 
-use crate::math::{apply_exponent, apply_precision, bound_magnitude_signed, to_precision};
+use crate::math::math::{apply_exponent, apply_precision, bound_magnitude_signed, to_precision};
 
 #[derive(PartialEq, Eq)]
 enum FundingChangeType {
@@ -45,10 +45,10 @@ impl FundingManager {
 
     /// Update FUnding factor per second
     ///
-    /// Updates the current funding factor based
+    /// @dev updates the current funding factor based
     ///
     /// Funding fee per_sec is calculated as
-    /// funding_fee_per_sec =f(unding_factor * (longshort difference)^ (funding_factor_exponent))/ (total_open_interest)
+    /// funding_fee_per_sec =(funding_factor * (longshort difference)^ (funding_factor_exponent))/ (total_open_interest)
     ///
     /// See README.md for more technical overview  info
     pub fn _update_funding_factor_ps(&mut self, long_short_diff: i128, total_open_interest: u128) {
@@ -88,7 +88,9 @@ impl FundingManager {
                 funding_factor_ps = max_funding_factor_ps;
             }
             let sign = long_short_diff.abs() / long_short_diff;
-            self.next_funding_factor_ps = funding_factor_ps as i128 * sign
+            self.next_funding_factor_ps = funding_factor_ps as i128 * sign;
+
+            return;
         }
 
         // current funding factor_ps
@@ -102,6 +104,7 @@ impl FundingManager {
 
         let mut change_type = FundingChangeType::Nochange;
 
+        // skew same direction is positive funding and longs more than shorts also when funding is negative shorts are more than longs
         let is_skew_same_direction = (current_funding_factor_ps > 0 && long_short_diff > 0)
             || (current_funding_factor_ps < 0 || long_short_diff < 0);
 

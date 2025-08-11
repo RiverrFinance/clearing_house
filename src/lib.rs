@@ -1,29 +1,24 @@
-use core::time;
-use std::borrow::Cow;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
-use candid::{CandidType, Principal};
-use ic_cdk::api::msg_caller;
+use candid::Principal;
+use ic_cdk::api::{msg_caller, time};
 use ic_cdk::call::Call;
+use ic_cdk::update;
 
-use ic_stable_structures::storable::Bound;
-use serde::{Deserialize, Serialize};
-
-use crate::market::{MarketDetails, MarketState, OpenPositionResult, Position};
-use crate::math::_percentage;
-use crate::types::{Amount, Asset, GetExchangeRateRequest, GetExchangeRateResult, XRC};
-use crate::vault::Vault;
+use crate::market::{ClosePositionResult, MarketDetails, OpenPositionResult};
+use crate::position::Position;
+use crate::types::{
+    Amount, AssetPricingDetails, GetExchangeRateRequest, GetExchangeRateResult, HouseDetails,
+};
 
 use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
-use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap, StableCell, StableVec, Storable};
+use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap, StableCell, StableVec};
 
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 
 const _ONE_SECOND: u64 = 1_000_000_000;
-
-const ONE_HOUR: u64 = 3_600_000_000_000;
 
 const _ADMIN_MEMORY: MemoryId = MemoryId::new(1);
 
@@ -31,45 +26,6 @@ const _MARKETS_ARRAY_MEMORY: MemoryId = MemoryId::new(2);
 const _VAULT_MEMORY: MemoryId = MemoryId::new(3);
 const _BALANCES_MEMORY: MemoryId = MemoryId::new(4);
 const _POSITIONS_MEMORY: MemoryId = MemoryId::new(5);
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Token {
-    pub asset_details: Asset,
-    pub canister_id: Principal,
-    pub decimals: u32,
-}
-
-impl Default for Token {
-    fn default() -> Self {
-        Self {
-            asset_details: Asset::default(),
-            canister_id: Principal::anonymous(),
-            decimals: 0,
-        }
-    }
-}
-
-impl Storable for Token {
-    fn to_bytes(&self) -> Cow<'_, [u8]> {
-        let serialized = bincode::serialize(self).expect("failed to serialize");
-        Cow::Owned(serialized)
-    }
-
-    /// Converts the element into an owned byte vector.
-    ///
-    /// This method consumes `self` and avoids cloning when possible.
-    fn into_bytes(self) -> Vec<u8> {
-        bincode::serialize(&self).expect("failed to serialize")
-    }
-
-    /// Converts bytes into an element.
-    fn from_bytes(bytes: Cow<[u8]>) -> Self {
-        bincode::deserialize(bytes.as_ref()).expect("failed to desearalize")
-    }
-
-    /// The size bounds of the type.
-    const BOUND: Bound = Bound::Unbounded;
-}
 
 thread_local! {
       static MEMORY_MANAGER:RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default())) ;
@@ -87,15 +43,132 @@ thread_local! {
         tag.get(_VAULT_MEMORY)
       }), Principal::anonymous()));
 
-      static HOUSE_ASSET:RefCell<StableCell<Token,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
+      static HOUSE_DETAILS:RefCell<StableCell<HouseDetails,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
         tag.get(_VAULT_MEMORY)
-      }), Token::default()));
+      }), HouseDetails::default()));
 
-    static POSITIONS:RefCell<HashMap<Principal,Vec<Position>>> = RefCell::new(HashMap::new());
+    /// User amd TimeStamp
 
-    static WAITING_POSITIONS:RefCell<HashMap<u64,VecDeque<(u128,Position)>>> = RefCell::new(HashMap::new());
+    static USERS_POSITIONS:RefCell<StableBTreeMap<(Principal,u64),(u64,Position),Memory>> = RefCell::new(StableBTreeMap::new(MEMORY_MANAGER.with(|s|{
+        s.borrow().get(_MARKETS_ARRAY_MEMORY)
+      })));
 
-    static PRICING_TIMER:RefCell<u64> = RefCell::new(0);
+    static MARKET_WAITING_POSITIONS:RefCell<HashMap<u64,VecDeque<(u128,Position,OperationType)>>> = RefCell::new(HashMap::new());
+
+
+}
+
+///
+///Close Position Function
+///
+/// Params
+/// ID - The ID correponding to the user's position
+/// ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
+
+#[update]
+pub fn close_position(id: u64, acceptable_price_limit: u128) {
+    let user = msg_caller();
+
+    let (market_index, position) = _get_user_position_details(user, id);
+
+    let user_balance = get_user_balance(user);
+
+    match _close_position(market_index, position, acceptable_price_limit) {
+        ClosePositionResult::Settled { returns } => {
+            update_user_balance(user, user_balance + returns);
+            _remove_user_position_details(user, id);
+        }
+        ClosePositionResult::Waiting { position } => {
+            _put_waiting_position(
+                market_index,
+                acceptable_price_limit,
+                position,
+                OperationType::Close,
+            );
+            ic_cdk_timers::set_timer(Duration::from_secs(4 * _ONE_SECOND), move || {
+                ic_cdk::futures::spawn(schedule_execution_of_wait_orders(market_index));
+            });
+        }
+        ClosePositionResult::Failed => {
+            return;
+        }
+    }
+}
+
+pub fn _close_position(
+    market_index: u64,
+    position: Position,
+    acceptable_price_limit: u128,
+) -> ClosePositionResult {
+    MARKETS.with_borrow_mut(|reference| {
+        let mut market = reference.get(market_index).expect("Market does not exist");
+
+        market.close_position(position, acceptable_price_limit)
+    })
+}
+/// Open Position function
+///
+/// Parameters
+///
+/// LONG:true for long and false for a short
+/// MARKET_INDEX: The market index of the respective market
+/// COLLLATERAL :The amount set as collateral for opening position
+/// LEVERAGE_X10 :The leverage to take multiplied by 10
+/// ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
+/// MAX_PNL - This serves as the max reserve for the position
+///
+/// @dev MAX_PNL serves as a virtual take profit point see README.md file for proper documentation
+#[update]
+pub fn open_position(
+    long: bool,
+    market_index: u64,
+    collateral: u128,
+    leverage_x10: u8,
+    acceptable_price_limit: u128,
+    max_pnl: u128,
+) {
+    let user = msg_caller();
+
+    let user_balance = get_user_balance(user);
+
+    let execution_fee = _get_execution_fee();
+
+    assert!(user_balance > execution_fee + collateral);
+
+    update_user_balance(user, user_balance - execution_fee);
+
+    let result = _open_position(
+        user,
+        market_index,
+        collateral,
+        leverage_x10,
+        acceptable_price_limit,
+        max_pnl,
+        long,
+    );
+
+    match result {
+        OpenPositionResult::Settled { position } => {
+            put_user_position(user, market_index, position);
+        }
+        OpenPositionResult::Waiting { position } => {
+            _put_waiting_position(
+                market_index,
+                acceptable_price_limit,
+                position,
+                OperationType::Open,
+            );
+            let _ = ic_cdk_timers::set_timer(Duration::from_secs(4 * _ONE_SECOND), move || {
+                ic_cdk::futures::spawn(schedule_execution_of_wait_orders(market_index));
+            });
+            return;
+        }
+        OpenPositionResult::Failed => {
+            return;
+        }
+    }
+
+    update_user_balance(user, user_balance - collateral);
 }
 
 pub fn _open_position(
@@ -103,82 +176,141 @@ pub fn _open_position(
     market_index: u64,
     collateral: u128,
     leverage_x10: u8,
-    acceptable_price: u128,
+    acceptable_price_limit: u128,
     max_pnl: u128,
     long: bool,
 ) -> OpenPositionResult {
     MARKETS.with_borrow(|tag| {
         let mut market = tag.get(market_index).unwrap();
 
-        let MarketState {
-            min_collateral,
-            max_leverage_x10,
-            max_pnl_percentage,
-            execution_fee,
-            ..
-        } = market.state;
+        let debt = (u128::from(leverage_x10 - 10) * collateral) / 10;
 
         let user_balance = get_user_balance(msg_caller());
 
-        if collateral >= min_collateral
-            || leverage_x10 < max_leverage_x10
-            || user_balance >= collateral + execution_fee
+        if user_balance < collateral
+        //  || collateral >= min_collateral
+        //|| leverage_x10 < max_leverage_x10
+        // || pnl_factor > max_pnl_factor
         {
             return OpenPositionResult::Failed;
         }
 
-        // assert!(collateral >= min_collateral, "I");
-        // assert!(leverage_x10 < max_leverage_x10, "II");
-        // // assert!(market_max_pnl >= max_pnl, "III");
-
-        // let user_balance = get_user_balance(msg_caller());
-
-        // assert!(user_balance >= collateral + execution_fee, "");
-
-        let debt = (u128::from(leverage_x10 - 10) * collateral) / 10;
-
-        return market.open_position(owner, collateral, debt, long, max_pnl, acceptable_price);
-    })
-}
-
-async fn schdule_execution_of_wait_orders(market_index: u64) {
-    _update_price(market_index).await;
-
-    let positions =
-        WAITING_POSITIONS.with_borrow_mut(|reference| reference.remove(&market_index).unwrap());
-
-    let mut index = 0;
-
-    while index < positions.len() {
-        let (acceptable_price, initial_position) = positions.get(index).unwrap();
-        let Position {
+        return market.open_position(
             owner,
             collateral,
             debt,
             long,
-            max_reserve,
-            ..
-        } = *initial_position;
-
-        let result = _open_position(
-            owner,
-            market_index,
-            collateral,
-            (((debt + collateral) * 10) / collateral) as u8,
-            *acceptable_price,
-            max_reserve,
-            long,
+            max_pnl,
+            acceptable_price_limit,
         );
-        if let OpenPositionResult::Settled { position } = result {
-            _put_position(owner, position);
-        }
+    })
+}
+
+async fn schedule_execution_of_wait_orders(market_index: u64) {
+    _update_price(market_index).await;
+
+    let positions = MARKET_WAITING_POSITIONS
+        .with_borrow_mut(|reference| reference.remove(&market_index).unwrap());
+
+    let mut index = 0;
+
+    while index < positions.len() {
+        let (acceptable_price_limit, position, op_type) = positions.get(index).unwrap();
+        match op_type {
+            OperationType::Close => {
+                // if it fails no change it there ,
+                // cant be waiting
+                _close_position(market_index, *position, *acceptable_price_limit);
+            }
+            OperationType::Open => {
+                let Position {
+                    owner,
+                    collateral,
+                    debt,
+                    long,
+                    max_reserve,
+                    ..
+                } = *position;
+
+                let result = _open_position(
+                    owner,
+                    market_index,
+                    collateral,
+                    (((debt + collateral) * 10) / collateral) as u8,
+                    *acceptable_price_limit,
+                    max_reserve,
+                    long,
+                );
+                if let OpenPositionResult::Settled { position } = result {
+                    put_user_position(owner, market_index, position);
+                }
+            }
+        };
+
         index += 1;
     }
 }
 
+fn put_user_position(owner: Principal, market_index: u64, position: Position) {
+    USERS_POSITIONS.with_borrow_mut(|reference| {
+        let id = time();
+        reference.insert((owner, id), (market_index, position));
+    })
+}
+
+fn _get_user_position_details(owner: Principal, id: u64) -> (u64, Position) {
+    USERS_POSITIONS.with_borrow(|reference| reference.get(&(owner, id)).unwrap())
+}
+
+fn _remove_user_position_details(owner: Principal, id: u64) {
+    USERS_POSITIONS.with_borrow_mut(|reference| reference.remove(&(owner, id)));
+}
+
+fn _put_waiting_position(
+    market_index: u64,
+    acceptable_price_limit: u128,
+    position: Position,
+    op_type: OperationType,
+) {
+    MARKET_WAITING_POSITIONS.with_borrow_mut(|reference| {
+        let mut waiting_positions = reference.remove(&market_index).unwrap_or_default();
+
+        if let OperationType::Close = op_type {
+            // close operation frees more liquidity so they prioritized and  appends more
+            waiting_positions.push_front((acceptable_price_limit, position, op_type));
+        } else {
+            waiting_positions.push_back((acceptable_price_limit, position, op_type));
+        }
+        reference.insert(market_index, waiting_positions);
+    })
+}
+
+fn _get_execution_fee() -> u128 {
+    HOUSE_DETAILS.with_borrow(|reference| reference.get().execution_fee)
+}
+
+fn _get_house_asset_pricing_details() -> AssetPricingDetails {
+    HOUSE_DETAILS.with_borrow(|reference| reference.get().asset_details.pricing_details.clone())
+}
+
+fn _get_xrc_id() -> Principal {
+    XRC.with_borrow(|reference| reference.get().clone())
+}
+fn _get_house_details() -> HouseDetails {
+    HOUSE_DETAILS.with_borrow(|reference| return reference.get().clone())
+}
+
+fn get_user_balance(user: Principal) -> Amount {
+    USERS_BALANCES.with_borrow(|tag| tag.get(&user).unwrap_or_default())
+}
+
+fn update_user_balance(user: Principal, new_balance: u128) {
+    USERS_BALANCES.with_borrow_mut(|reference| reference.insert(user, new_balance));
+}
+
 async fn _update_price(market_index: u64) {
     let mut market = MARKETS.with_borrow(|reference| reference.get(market_index).unwrap());
-    let quote_asset = _get_house_asset_details().asset_details;
+    let quote_asset = _get_house_asset_pricing_details();
     let base_asset = market.base_asset();
     let xrc_canister = _get_xrc_id();
     let request = GetExchangeRateRequest {
@@ -197,43 +329,16 @@ async fn _update_price(market_index: u64) {
     }
 }
 
-fn _put_position(owner: Principal, position: Position) {
-    POSITIONS.with_borrow_mut(|reference| {
-        let mut positions = reference.remove(&owner).unwrap_or_default();
-        positions.push(position);
-        reference.insert(owner, positions);
-    })
-}
-
-fn _put_waiting_position(market_index: u64, acceptable_price_cap: u128, position: Position) {
-    WAITING_POSITIONS.with_borrow_mut(|reference| {
-        let mut waiting_positions = reference.remove(&market_index).unwrap_or_default();
-        waiting_positions.push_back((acceptable_price_cap, position));
-
-        reference.insert(market_index, waiting_positions);
-    })
-}
-
-fn _get_xrc_id() -> Principal {
-    XRC.with_borrow(|reference| reference.get().clone())
-}
-fn _get_house_asset_details() -> Token {
-    HOUSE_ASSET.with_borrow(|reference| return reference.get().clone())
-}
-
-fn _get_pricing_timer() -> u64 {
-    PRICING_TIMER.with_borrow(|x| *x)
-}
-
-fn get_user_balance(user: Principal) -> Amount {
-    USERS_BALANCES.with_borrow(|tag| tag.get(&user).unwrap_or_default())
+enum OperationType {
+    Open,
+    Close,
 }
 
 pub mod bias;
-pub mod floatmath;
 pub mod funding;
 pub mod market;
 pub mod math;
+pub mod position;
 pub mod pricing;
 pub mod types;
 pub mod vault;

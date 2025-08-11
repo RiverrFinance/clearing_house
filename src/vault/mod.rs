@@ -1,10 +1,6 @@
-use std::borrow::Cow;
-
-use ic_stable_structures::{Storable, storable::Bound};
-
 use crate::{
-    math::{_ONE_PERCENT, _percentage},
-    types::Asset,
+    math::math::{_ONE_PERCENT, _percentage},
+    types::AssetPricingDetails,
 };
 
 const YEAR: Time = 31_536_000_000_000_000;
@@ -220,8 +216,8 @@ impl Vault {
 }
 
 pub struct LiquidityManagerDetails {
-    pub asset: Asset,
-    pub virtual_asset: Asset,
+    pub asset: AssetPricingDetails,
+    pub virtual_asset: AssetPricingDetails,
     pub min_amount: Amount,
 }
 

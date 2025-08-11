@@ -1,11 +1,11 @@
 use ic_cdk::api::time as now;
 use serde::{Deserialize, Serialize};
 
-use crate::math::{apply_exponent, apply_precision, diff};
+use crate::math::math::{apply_exponent, apply_precision, diff};
 
 type Time = u64;
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Deserialize, Clone, Copy, Serialize)]
 pub struct PricingManager {
     pub price: u128,
     pub last_fetched: Time,
@@ -25,29 +25,6 @@ impl PricingManager {
     pub fn update_price(&mut self, price: u128) {
         self.price = price;
         self.last_fetched = now()
-        // let Self { xrc_canister, .. } = self;
-        // let request = GetExchangeRateRequest {
-        //     base_asset,
-        //     quote_asset,
-        //     timestamp: None,
-        // };
-
-        // let canister_id = Principal::from_text(xrc_canister).unwrap();
-
-        // let call = Call::unbounded_wait(canister_id, "get_exchange_rate")
-        //     .with_arg(request)
-        //     .with_cycles(1_000_000_000);
-
-        // let result: GetExchangeRateResult = call.await.unwrap().candid().unwrap();
-        // if let Ok(response) = result {
-        //     let price = to_precision(
-        //         response.rate as u128,
-        //         10u128.pow(response.metadata.decimals),
-        //     );
-        //     self.price = price;
-        //     self.last_fetched = now()
-        // } else {
-        // }
     }
     // Price impact is calculated as:
     //

@@ -1,17 +1,44 @@
 use primitive_types::{U128, U256};
 
-//Abeg No toch am  !!!
+use crate::math::floatmath;
 
-use crate::floatmath;
+//Abeg No toch am  !!!
 
 pub const _ONE_PERCENT: u64 = 100_000;
 pub const FLOAT_FACTOR_EXPONENT: u128 = 9;
 pub const FLOAT_PRECISION: u128 = 100_000_000_000_000_000_000; //1e20
 pub const FLOAT_TO_U60X18_DIVISOR: u128 = 100;
 
+pub trait Neg {
+    fn neg(&self) -> i128;
+}
+
+impl Neg for i128 {
+    /// returns the negative of a signed integer
+    fn neg(&self) -> Self {
+        self * -1
+    }
+}
+
+impl Neg for u128 {
+    // returns as negative integer having the magnitude of self
+    fn neg(&self) -> i128 {
+        (*self as i128).neg()
+    }
+}
+
 pub fn apply_precision(value: u128, factor: u128) -> u128 {
     return mul_div(value, factor, FLOAT_PRECISION);
 }
+
+// #[test]
+// fn test_floatmath() {
+//     let num = (2 * FLOAT_PRECISION) + (5 * 10u128.pow(19));
+//     2.5;
+
+//     print!("The reuslt is {}", result / FLOAT_PRECISION)
+//     // float  precision
+// }
 
 pub fn apply_exponent(value: u128, exponent: u128) -> u128 {
     //float math does not allow for x less than 0

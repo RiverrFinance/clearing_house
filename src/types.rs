@@ -1,14 +1,70 @@
 use std::borrow::Cow;
 
-use super::math::_ONE_PERCENT;
-
 use candid::{CandidType, Principal};
 use ic_cdk::call::Call;
+
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
 pub type Amount = u128;
 pub type Time = u64;
+
+#[derive(Serialize, Deserialize, CandidType, Clone)]
+pub struct HouseDetails {
+    pub asset_details: Asset,
+    pub execution_fee: u128,
+    pub execution_fee_collected: u128,
+}
+
+impl Default for HouseDetails {
+    fn default() -> Self {
+        Self {
+            execution_fee: 0,
+            asset_details: Asset::default(),
+            execution_fee_collected: 0,
+        }
+    }
+}
+
+impl Storable for HouseDetails {
+    fn to_bytes(&self) -> Cow<'_, [u8]> {
+        let serialized = bincode::serialize(self).expect("failed to serialize");
+        Cow::Owned(serialized)
+    }
+
+    /// Converts the element into an owned byte vector.
+    ///
+    /// This method consumes `self` and avoids cloning when possible.
+    fn into_bytes(self) -> Vec<u8> {
+        bincode::serialize(&self).expect("failed to serialize")
+    }
+
+    /// Converts bytes into an element.
+    fn from_bytes(bytes: Cow<[u8]>) -> Self {
+        bincode::deserialize(bytes.as_ref()).expect("failed to desearalize")
+    }
+
+    /// The size bounds of the type.
+    const BOUND: Bound = Bound::Unbounded;
+}
+
+#[derive(Serialize, Deserialize, CandidType, Clone)]
+
+pub struct Asset {
+    pub pricing_details: AssetPricingDetails,
+    pub canister_id: Principal,
+    pub decimals: u32,
+}
+
+impl Default for Asset {
+    fn default() -> Self {
+        Self {
+            pricing_details: AssetPricingDetails::default(),
+            canister_id: Principal::anonymous(),
+            decimals: 0,
+        }
+    }
+}
 
 #[derive(Deserialize, Serialize, Copy, Clone, CandidType)]
 pub enum AssetClass {
@@ -25,7 +81,7 @@ impl Default for AssetClass {
 }
 
 #[derive(Clone, Serialize, Deserialize, Default, CandidType)]
-pub struct Asset {
+pub struct AssetPricingDetails {
     /// The symbol/code of the asset.
     pub symbol: String,
     /// The asset class.
@@ -36,10 +92,10 @@ pub struct Asset {
 pub struct GetExchangeRateRequest {
     /// The base asset, i.e., the first asset in a currency pair. For example,
     /// ICP is the base asset in the currency pair ICP/USD.
-    pub base_asset: Asset,
+    pub base_asset: AssetPricingDetails,
     /// The quote asset, i.e., the second asset in a currency pair. For example,
     /// USD is the quote asset in the currency pair ICP/USD.
-    pub quote_asset: Asset,
+    pub quote_asset: AssetPricingDetails,
     /// An optional parameter used to find a rate at a specific time.
     pub timestamp: Option<u64>,
 }
@@ -65,9 +121,9 @@ pub struct ExchangeRateMetadata {
 #[derive(CandidType, Deserialize)]
 pub struct ExchangeRate {
     /// The base asset.
-    pub base_asset: Asset,
+    pub base_asset: AssetPricingDetails,
     /// The quote asset.
-    pub quote_asset: Asset,
+    pub quote_asset: AssetPricingDetails,
     /// The timestamp associated with the returned rate.
     pub timestamp: u64,
     /// The median rate from the received rates, scaled by the factor `10^decimals` in the metadata.
@@ -121,7 +177,7 @@ pub struct OtherError {
 pub type GetExchangeRateResult = Result<ExchangeRate, ExchangeRateError>;
 
 pub struct XRC {
-    canister_id: Principal,
+    pub canister_id: Principal,
 }
 
 impl XRC {
