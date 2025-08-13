@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::math::math::{
-    apply_exponent, apply_precision, bound_below_signed, bound_signed, mul_div,
+    Neg, apply_exponent, apply_precision, bound_below_signed, bound_signed, mul_div,
 };
 
 #[derive(Default, Deserialize, Serialize)]
@@ -55,10 +55,10 @@ impl Bias {
     /// House pnl
     ///
     /// calculates the net pnl of the all traders by adding the pnl of shorts wth the pnl of longs
-    pub fn net_traders_pnl(&self, price: u128) -> i128 {
-        let pnl_of_longs = self.longs.traders_pnl_for_specific_bias(price, true);
+    pub fn net_house_pnl(&self, price: u128) -> i128 {
+        let pnl_of_longs = self.longs.house_pnl_by_specific_bias(price, true);
 
-        let pnl_of_shorts = self.shorts.traders_pnl_for_specific_bias(price, false);
+        let pnl_of_shorts = self.shorts.house_pnl_by_specific_bias(price, false);
 
         return pnl_of_shorts + pnl_of_longs;
     }
@@ -76,7 +76,7 @@ pub struct BiasDetails {
     /// the value would always reduce for borrowing factor update
     /// the value would increase for a positive funding factor  and reduce for a negative funding factor update
     /// bpunded below by net debt
-    total_open_interest_dynamic: u128,
+    total_open_interest_dynamic: i128,
 
     // Total amount in tokens or units bought for longs  or sold for shorts
     total_units: u128,
@@ -116,7 +116,6 @@ impl BiasDetails {
             total_open_interest: net_open_interest,
             total_units,
             total_reserve: net_reserve,
-            total_open_interest_dynamic,
             total_debt_of_traders,
             ..
         } = *self;
@@ -134,8 +133,7 @@ impl BiasDetails {
 
         self.total_units = ((total_units as i128) + delta_total_units) as u128;
 
-        self.total_open_interest_dynamic =
-            ((total_open_interest_dynamic as i128) + delta_total_open_interest_dynamic) as u128;
+        self.total_open_interest_dynamic += delta_total_open_interest_dynamic;
 
         self.total_debt_of_traders =
             ((total_debt_of_traders as i128) + delta_net_debt_of_traders) as u128;
@@ -148,6 +146,29 @@ impl BiasDetails {
 
     pub fn cummulative_borrowing_factor_since_epcoh(&self) -> u128 {
         self.cummulative_borrowing_factor_since_epoch
+    }
+
+    pub fn house_pnl_by_specific_bias(&self, price: u128, is_long: bool) -> i128 {
+        let Self {
+            total_open_interest,
+            total_units,
+            total_reserve,
+            total_open_interest_dynamic,
+            total_debt_of_traders,
+            ..
+        } = *self;
+        let sign = if is_long { 1 } else { -1 };
+
+        let reduced_pnl_by_bad_debt = total_open_interest_dynamic.min(0);
+        let minimum_pnl = total_reserve.neg() + reduced_pnl_by_bad_debt;
+
+        let house_pnl = bound_signed(
+            (total_open_interest as i128) - (apply_precision(total_units, price) as i128) * sign,
+            minimum_pnl,
+            total_open_interest_dynamic - (total_debt_of_traders as i128),
+        );
+
+        house_pnl
     }
 
     /// Traders PNL by Bias calculation
@@ -170,7 +191,7 @@ impl BiasDetails {
 
         let traders_pnl = bound_signed(
             (apply_precision(total_units, price) as i128 - total_open_interest as i128) * sign,
-            (total_open_interest_dynamic - total_debt_of_traders) as i128,
+            (total_open_interest_dynamic - (total_debt_of_traders) as i128).min(0),
             total_reserve as i128,
         );
         return traders_pnl;
@@ -228,11 +249,7 @@ impl BiasDetails {
         let value =
             apply_precision(next_funding_factor.abs() as u128, self.total_open_interest) as i128;
 
-        self.total_open_interest_dynamic = bound_below_signed(
-            self.total_open_interest_dynamic as i128 + (value * sign),
-            self.total_debt_of_traders as i128,
-        )
-        .abs() as u128;
+        self.total_open_interest_dynamic = self.total_open_interest_dynamic + (value * sign);
 
         // Update the next funding factor
         self.next_funding_factor = delta_cfr;
@@ -247,11 +264,7 @@ impl BiasDetails {
         let value = apply_precision(current_borrowing_factor, self.total_open_interest);
 
         // net open_interest when trader has lost all collateral
-        self.total_open_interest_dynamic = bound_below_signed(
-            self.total_open_interest_dynamic as i128 - value as i128,
-            self.total_debt_of_traders as i128,
-        )
-        .abs() as u128;
+        self.total_open_interest_dynamic -= value as i128;
 
         self.next_borrowing_factor = delta_cfr;
 
@@ -262,7 +275,7 @@ impl BiasDetails {
         self.total_open_interest
     }
 
-    pub fn bias_parameters(&self) -> (u128, u128, u128, u128, u128) {
+    pub fn bias_parameters(&self) -> (u128, i128, u128, u128, u128) {
         return (
             self.total_open_interest,
             self.total_open_interest_dynamic,

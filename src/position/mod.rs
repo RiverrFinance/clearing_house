@@ -139,7 +139,6 @@ impl Position {
             0,
         );
 
-        // let mut funding_paid = net_funding_fee_magnitude as u128;
         let mut collateral_out = 0;
 
         let mut house_debt = 0;

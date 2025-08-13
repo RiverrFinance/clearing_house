@@ -6,6 +6,8 @@ use ic_cdk::call::Call;
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
+use crate::asset::{Asset, AssetPricingDetails};
+
 pub type Amount = u128;
 pub type Time = u64;
 
@@ -46,46 +48,6 @@ impl Storable for HouseDetails {
 
     /// The size bounds of the type.
     const BOUND: Bound = Bound::Unbounded;
-}
-
-#[derive(Serialize, Deserialize, CandidType, Clone)]
-
-pub struct Asset {
-    pub pricing_details: AssetPricingDetails,
-    pub canister_id: Principal,
-    pub decimals: u32,
-}
-
-impl Default for Asset {
-    fn default() -> Self {
-        Self {
-            pricing_details: AssetPricingDetails::default(),
-            canister_id: Principal::anonymous(),
-            decimals: 0,
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Copy, Clone, CandidType)]
-pub enum AssetClass {
-    /// The cryptocurrency asset class.
-    Cryptocurrency,
-    /// The fiat currency asset class.
-    FiatCurrency,
-}
-
-impl Default for AssetClass {
-    fn default() -> Self {
-        AssetClass::Cryptocurrency
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Default, CandidType)]
-pub struct AssetPricingDetails {
-    /// The symbol/code of the asset.
-    pub symbol: String,
-    /// The asset class.
-    pub class: AssetClass,
 }
 
 #[derive(CandidType, Deserialize)]

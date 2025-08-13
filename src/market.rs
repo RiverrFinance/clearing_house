@@ -8,12 +8,12 @@ use std::borrow::Cow;
 use ic_stable_structures::storable::{Bound, Storable};
 
 use crate::{
+    asset::AssetPricingDetails,
     bias::{Bias, UpdateBiasDetailsParamters},
     funding::FundingManager,
-    math::math::{Neg, apply_precision, bound_below_signed, mul_div, to_precision},
+    math::math::{Neg, apply_precision, mul_div, to_precision},
     position::Position,
     pricing::PricingManager,
-    types::AssetPricingDetails,
 };
 
 pub const MAX_ALLOWED_PRICE_CHANGE_INTERVAL: u64 = 600_000_000_000;
@@ -31,6 +31,12 @@ pub enum ClosePositionResult {
     Failed,
 }
 
+pub enum LiquidityOperationResult {
+    Settled { amount_out: u128 },
+    Waiting,
+    Failed,
+}
+
 #[derive(Default, Deserialize, Serialize)]
 pub struct MarketState {
     pub max_leverage_x10: u8,
@@ -41,6 +47,7 @@ pub struct MarketState {
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct HouseLiquidityManager {
+    pub total_liquidity_tokens_minted: u128,
     /// Total Deposit
     ///
     /// total deposit into a amrket by both liquidity providers and traders
@@ -60,6 +67,8 @@ pub struct HouseLiquidityManager {
     /// Bad Debt
     ///
     /// bad debt owed by house
+    /// Bad debt occurrs when positons that shold be liquidated are not liquidated on time, the positions debt on funding fees given
+    /// to the house fot the particular market ,  
     pub bad_debt: u128,
     /// Free Liquidity
     ///
@@ -79,14 +88,16 @@ pub struct HouseLiquidityManager {
 }
 
 impl HouseLiquidityManager {
-    pub fn static_value(&self) -> u128 {
-        // The House value is next sum of tokens in the pool
-        // i.e
-        self.free_liquidity
+    /// The House value is difference of the net sum of tokens in the pool (excluding losses or gains from traders positions)
+    /// and the current bad debt of the pool
+    /// @dev it is returned as a signed integer becasue in rare cases of extreme bad debt ,this value might be less than zero
+    pub fn static_value(&self) -> i128 {
+        (self.free_liquidity
             + self.current_longs_reserve
+            + self.current_shorts_reserve
             + self.current_net_debt
-            + self.current_borrow_fees_owed
-            - self.bad_debt
+            + self.current_borrow_fees_owed) as i128
+            - self.bad_debt as i128
     }
 }
 
@@ -102,16 +113,105 @@ pub struct MarketDetails {
 }
 
 impl MarketDetails {
-    pub fn deposit_liquidity(&mut self, owner: Principal, deposit_amount: u128, min_out: u128) {
+    pub fn deposit_liquidity(
+        &mut self,
+        deposit_amount: u128,
+        min_out: u128,
+    ) -> LiquidityOperationResult {
         let price_update = self
             .pricing_manager
             .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
 
         if let Some(price) = price_update {
+            let house_value = self._house_value(price);
+
+            let Self {
+                liquidity_manager, ..
+            } = self;
+
+            let HouseLiquidityManager {
+                total_deposit,
+                total_liquidity_tokens_minted,
+                free_liquidity,
+                bad_debt,
+                ..
+            } = liquidity_manager;
+
+            let liquidity_tokens_to_mint = if house_value == 0 {
+                deposit_amount
+            } else {
+                mul_div(deposit_amount, *total_liquidity_tokens_minted, house_value)
+            };
+
+            if liquidity_tokens_to_mint < min_out {
+                return LiquidityOperationResult::Failed;
+            }
+            *total_deposit += deposit_amount;
+
+            let repaid_bad_debt = (*bad_debt).min(deposit_amount);
+            if repaid_bad_debt == *bad_debt {
+                // amount is enough to repay bad debt ;
+
+                *free_liquidity += deposit_amount - repaid_bad_debt;
+            }
+            *bad_debt -= repaid_bad_debt;
+
+            *total_liquidity_tokens_minted += liquidity_tokens_to_mint;
+
+            return LiquidityOperationResult::Settled {
+                amount_out: liquidity_tokens_to_mint,
+            };
         } else {
+            return LiquidityOperationResult::Waiting;
         }
     }
-    ///
+
+    pub fn withdraw_liquidity(
+        &mut self,
+        liquidity_tokens_in: u128,
+        min_out: u128,
+    ) -> LiquidityOperationResult {
+        let price_update = self
+            .pricing_manager
+            .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
+
+        if let Some(price) = price_update {
+            let house_value = self._house_value(price);
+
+            let Self {
+                liquidity_manager, ..
+            } = self;
+
+            let HouseLiquidityManager {
+                total_deposit,
+                total_liquidity_tokens_minted,
+                free_liquidity,
+                ..
+            } = liquidity_manager;
+
+            let amount_of_assets_out = mul_div(
+                liquidity_tokens_in,
+                house_value,
+                *total_liquidity_tokens_minted,
+            );
+
+            let amount_available = amount_of_assets_out.min(*free_liquidity);
+
+            if amount_available < min_out {
+                return LiquidityOperationResult::Failed;
+            }
+
+            *free_liquidity -= amount_available;
+            *total_deposit -= amount_available;
+
+            LiquidityOperationResult::Settled {
+                amount_out: amount_available,
+            }
+        } else {
+            return LiquidityOperationResult::Waiting;
+        }
+    }
+
     ///
     ///Open Position
     ///
@@ -146,6 +246,9 @@ impl MarketDetails {
             let added_reserve = max_pnl;
 
             let house_value = self._house_value(price);
+            if house_value == 0 {
+                return OpenPositionResult::Failed;
+            }
 
             let Self {
                 liquidity_manager,
@@ -308,13 +411,15 @@ impl MarketDetails {
             };
 
             *current_net_debt -= position.debt;
-            *free_liquidity = net_free_liquidity;
             *current_borrow_fees_owed -= net_borrowing_fee;
+
             // collateral out is only what is available in market
             collateral_out = collateral_out.min(*total_deposit);
-            //
             *total_deposit -= collateral_out;
-            *bad_debt += house_bad_debt;
+
+            let bad_debt_removed = net_free_liquidity.min(*bad_debt);
+            *bad_debt = (*bad_debt + house_bad_debt) - bad_debt_removed;
+            *free_liquidity = net_free_liquidity - bad_debt_removed;
 
             if long {
                 *current_longs_reserve -= position.max_reserve
@@ -323,10 +428,8 @@ impl MarketDetails {
             }
 
             let position_open_interest = position.open_interest();
-            let delta_open_interest_dynamic = bound_below_signed(
-                position_open_interest as i128 + net_funding_fee - net_borrowing_fee as i128,
-                position.debt as i128,
-            );
+            let delta_open_interest_dynamic =
+                position_open_interest as i128 + net_funding_fee - (net_borrowing_fee as i128);
 
             let params = UpdateBiasDetailsParamters {
                 delta_net_debt_of_traders: position.debt.neg(),
@@ -355,51 +458,58 @@ impl MarketDetails {
         pricing_manager.update_price(price_to_precision);
     }
 
-    pub fn collect_borrowing_payment(&mut self) {
+    pub fn collect_borrowing_payment(&mut self) -> bool {
         let pricing_manager = self.pricing_manager;
 
-        let price = pricing_manager
-            .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL)
-            .unwrap();
+        let price_update =
+            pricing_manager.get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
 
-        let pool_value = self._house_value(price);
+        if let Some(price) = price_update {
+            let pool_value = self._house_value(price);
 
-        let Self {
-            liquidity_manager,
+            let Self {
+                liquidity_manager,
 
-            bias_tracker,
-            ..
-        } = self;
+                bias_tracker,
+                ..
+            } = self;
 
-        let long_reserve = bias_tracker.longs.reserve_value(price, true);
+            let long_reserve = bias_tracker.longs.reserve_value(price, true);
 
-        let short_reserve = bias_tracker.longs.reserve_value(price, false);
+            let short_reserve = bias_tracker.longs.reserve_value(price, false);
 
-        let longs_borrow_factor_per_second = bias_tracker
-            .longs
-            .calculate_borrowing_factor_per_sec(pool_value, long_reserve);
+            let longs_borrow_factor_per_second = bias_tracker
+                .longs
+                .calculate_borrowing_factor_per_sec(pool_value, long_reserve);
 
-        let shorts_borrow_factor_per_second = bias_tracker
-            .shorts
-            .calculate_borrowing_factor_per_sec(pool_value, short_reserve);
+            let shorts_borrow_factor_per_second = bias_tracker
+                .shorts
+                .calculate_borrowing_factor_per_sec(pool_value, short_reserve);
 
-        let HouseLiquidityManager {
-            last_time_since_borrow_fees_collected,
-            current_borrow_fees_owed,
-            ..
-        } = liquidity_manager;
+            let HouseLiquidityManager {
+                last_time_since_borrow_fees_collected,
+                current_borrow_fees_owed,
+                ..
+            } = liquidity_manager;
 
-        let duration_in_secs = duration_in_secs(*last_time_since_borrow_fees_collected);
+            let duration_in_secs = duration_in_secs(*last_time_since_borrow_fees_collected);
 
-        let longs_borrow_payment = bias_tracker.longs.update_cumulative_borrowing_factor(
-            longs_borrow_factor_per_second * duration_in_secs as u128,
-        );
+            let longs_borrow_payment = bias_tracker.longs.update_cumulative_borrowing_factor(
+                longs_borrow_factor_per_second * duration_in_secs as u128,
+            );
 
-        let shorts_borrow_payement = bias_tracker.shorts.update_cumulative_borrowing_factor(
-            shorts_borrow_factor_per_second * duration_in_secs as u128,
-        );
-        *last_time_since_borrow_fees_collected = time();
-        *current_borrow_fees_owed += shorts_borrow_payement + longs_borrow_payment
+            let shorts_borrow_payement = bias_tracker.shorts.update_cumulative_borrowing_factor(
+                shorts_borrow_factor_per_second * duration_in_secs as u128,
+            );
+            *last_time_since_borrow_fees_collected = time();
+            *current_borrow_fees_owed += shorts_borrow_payement + longs_borrow_payment;
+            return true;
+        } else {
+            return false;
+        }
+
+        // let price = pricing_manager
+        //     .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL)
     }
 
     /// Update funding
@@ -460,9 +570,12 @@ impl MarketDetails {
             ._update_funding_factor_ps(current_long_short_diff, current_total_open_interest);
     }
 
+    /// Calculates the current value of the
     pub fn _house_value(&mut self, price: u128) -> u128 {
-        (self.liquidity_manager.static_value().neg() - self.bias_tracker.net_traders_pnl(price))
-            as u128
+        let house_value = (self.liquidity_manager.static_value() as i128
+            - self.bias_tracker.net_house_pnl(price))
+        .max(0);
+        return house_value as u128;
     }
     pub fn base_asset(&self) -> AssetPricingDetails {
         self.asset_pricing_details.clone()

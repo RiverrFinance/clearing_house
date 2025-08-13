@@ -258,6 +258,7 @@ dependencies = [
  "futures",
  "ic-cdk",
  "ic-cdk-timers",
+ "ic-ledger-types",
  "ic-stable-structures 0.7.0",
  "icrc-ledger-types",
  "primitive-types",
@@ -629,6 +630,21 @@ dependencies = [
  "serde",
  "strum",
  "strum_macros",
+]
+
+[[package]]
+name = "ic-ledger-types"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "feb52826a353b583012628af6da762b52672350686c3275234febfadeca965ea"
+dependencies = [
+ "candid",
+ "crc32fast",
+ "hex",
+ "ic-cdk",
+ "serde",
+ "serde_bytes",
+ "sha2",
 ]
 
 [[package]]
