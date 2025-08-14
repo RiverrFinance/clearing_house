@@ -13,7 +13,7 @@ pub type Time = u64;
 
 #[derive(Serialize, Deserialize, CandidType, Clone)]
 pub struct HouseDetails {
-    pub asset_details: Asset,
+    pub house_asset: Asset,
     pub execution_fee: u128,
     pub execution_fee_collected: u128,
 }
@@ -22,7 +22,7 @@ impl Default for HouseDetails {
     fn default() -> Self {
         Self {
             execution_fee: 0,
-            asset_details: Asset::default(),
+            house_asset: Asset::default(),
             execution_fee_collected: 0,
         }
     }

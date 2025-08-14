@@ -59,6 +59,9 @@ thread_local! {
     static MARKET_PRICE_WAITING_OPERATION:RefCell<HashMap<u64,(TimerId,VecDeque<PriceWaitingOperation>)>> = RefCell::new(HashMap::new());
 
 
+    static MARKET_SHARE_USER_BALANCES:RefCell<HashMap<(Principal,u64),u128>> = RefCell::new(HashMap::new());
+
+
 }
 
 enum PriceWaitingOperation {
@@ -73,68 +76,39 @@ enum PriceWaitingOperation {
 }
 
 //enter
-pub fn _deposit(amount: u128, index: Option<BlockIndex>) {
+#[ic_cdk::update]
+pub async fn _deposit(amount: u128, block_index: Option<BlockIndex>) {
     let user = msg_caller();
 
-    let HouseDetails { asset_details, .. } = _get_house_details();
+    let HouseDetails { house_asset, .. } = _get_house_details();
+
+    let tx_result = house_asset._send_in(amount, user, block_index).await;
+
+    if tx_result {
+        let user_balance = get_user_balance(user);
+
+        update_user_balance(user, user_balance + amount);
+    }
 }
 
-///
-///Close Position Function
-///
-/// Params
-/// ID - The ID correponding to the user's position
-/// ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
-#[update]
-pub fn close_position(id: u64, acceptable_price_limit: u128) {
+#[ic_cdk::update]
+pub async fn _withdraw(amount: u128) {
     let user = msg_caller();
 
-    let (market_index, position) = _get_user_position_details(user, id);
+    let HouseDetails { house_asset, .. } = _get_house_details();
 
     let user_balance = get_user_balance(user);
 
-    match _close_position(market_index, position, acceptable_price_limit) {
-        ClosePositionResult::Settled { returns } => {
-            update_user_balance(user, user_balance + returns);
-            _remove_user_position_details(user, id);
-        }
-        ClosePositionResult::Waiting { position } => {
-            let current_timer_id = _get_market_timer(market_index);
-            // clear current timer
-            ic_cdk_timers::clear_timer(current_timer_id);
-
-            let new_timer_id =
-                ic_cdk_timers::set_timer(Duration::from_secs(4 * _ONE_SECOND), move || {
-                    ic_cdk::futures::spawn(schedule_execution_of_wait_operations(market_index));
-                });
-
-            _put_waiting_position(
-                market_index,
-                new_timer_id,
-                PriceWaitingOperation::ClosePositionOp(acceptable_price_limit, position),
-                false,
-            );
-        }
-        ClosePositionResult::Failed => {
-            return;
+    if user_balance > amount {
+        update_user_balance(user, user_balance - amount);
+        let tx_result = house_asset._send_out(amount, user).await;
+        if tx_result == false {
+            // refund amount back
+            update_user_balance(user, user_balance + amount);
         }
     }
 }
 
-pub fn _close_position(
-    market_index: u64,
-    position: Position,
-    acceptable_price_limit: u128,
-) -> ClosePositionResult {
-    MARKETS.with_borrow_mut(|reference| {
-        let mut market = reference.get(market_index).expect("Market does not exist");
-
-        let result = market.close_position(position, acceptable_price_limit);
-
-        reference.set(market_index, &market);
-        return result;
-    })
-}
 /// Open Position function
 ///
 /// Parameters
@@ -204,6 +178,63 @@ pub fn open_position(
     }
 
     update_user_balance(user, user_balance - collateral);
+}
+
+///
+///Close Position Function
+///
+/// Params
+/// ID - The ID correponding to the user's position
+/// ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
+#[update]
+pub fn close_position(id: u64, acceptable_price_limit: u128) {
+    let user = msg_caller();
+
+    let (market_index, position) = _get_user_position_details(user, id);
+
+    let user_balance = get_user_balance(user);
+
+    match _close_position(market_index, position, acceptable_price_limit) {
+        ClosePositionResult::Settled { returns } => {
+            update_user_balance(user, user_balance + returns);
+            _remove_user_position_details(user, id);
+        }
+        ClosePositionResult::Waiting { position } => {
+            let current_timer_id = _get_market_timer(market_index);
+            // clear current timer
+            ic_cdk_timers::clear_timer(current_timer_id);
+
+            let new_timer_id =
+                ic_cdk_timers::set_timer(Duration::from_secs(4 * _ONE_SECOND), move || {
+                    ic_cdk::futures::spawn(schedule_execution_of_wait_operations(market_index));
+                });
+
+            _put_waiting_position(
+                market_index,
+                new_timer_id,
+                PriceWaitingOperation::ClosePositionOp(acceptable_price_limit, position),
+                false,
+            );
+        }
+        ClosePositionResult::Failed => {
+            return;
+        }
+    }
+}
+
+pub fn _close_position(
+    market_index: u64,
+    position: Position,
+    acceptable_price_limit: u128,
+) -> ClosePositionResult {
+    MARKETS.with_borrow_mut(|reference| {
+        let mut market = reference.get(market_index).expect("Market does not exist");
+
+        let result = market.close_position(position, acceptable_price_limit);
+
+        reference.set(market_index, &market);
+        return result;
+    })
 }
 
 pub fn _open_position(
@@ -407,7 +438,7 @@ fn _get_execution_fee() -> u128 {
 }
 
 fn _get_house_asset_pricing_details() -> AssetPricingDetails {
-    HOUSE_DETAILS.with_borrow(|reference| reference.get().asset_details.pricing_details.clone())
+    HOUSE_DETAILS.with_borrow(|reference| reference.get().house_asset.pricing_details.clone())
 }
 
 fn _get_xrc_id() -> Principal {
