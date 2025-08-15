@@ -6,14 +6,16 @@ use ic_cdk::call::Call;
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
-use crate::asset::{Asset, AssetPricingDetails};
+use crate::asset::{AssetLedger, AssetPricingDetails};
 
 pub type Amount = u128;
 pub type Time = u64;
 
 #[derive(Serialize, Deserialize, CandidType, Clone)]
 pub struct HouseDetails {
-    pub house_asset: Asset,
+    pub house_asset_ledger: AssetLedger,
+    pub house_asset_pricing_details: AssetPricingDetails,
+    pub markets_tokens_ledger: AssetLedger,
     pub execution_fee: u128,
     pub execution_fee_collected: u128,
 }
@@ -21,8 +23,10 @@ pub struct HouseDetails {
 impl Default for HouseDetails {
     fn default() -> Self {
         Self {
+            markets_tokens_ledger: AssetLedger::default(),
+            house_asset_pricing_details: AssetPricingDetails::default(),
             execution_fee: 0,
-            house_asset: Asset::default(),
+            house_asset_ledger: AssetLedger::default(),
             execution_fee_collected: 0,
         }
     }
@@ -62,7 +66,7 @@ pub struct GetExchangeRateRequest {
     pub timestamp: Option<u64>,
 }
 
-#[derive(CandidType, Deserialize)]
+#[derive(CandidType, Default, Deserialize)]
 pub struct ExchangeRateMetadata {
     /// The scaling factor for the exchange rate and the standard deviation.
     pub decimals: u32,
@@ -80,7 +84,7 @@ pub struct ExchangeRateMetadata {
     pub forex_timestamp: Option<u64>,
 }
 
-#[derive(CandidType, Deserialize)]
+#[derive(CandidType, Default, Deserialize)]
 pub struct ExchangeRate {
     /// The base asset.
     pub base_asset: AssetPricingDetails,

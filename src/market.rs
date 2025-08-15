@@ -103,7 +103,7 @@ impl HouseLiquidityManager {
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct MarketDetails {
-    pub asset_pricing_details: AssetPricingDetails,
+    pub index_asset_pricing_details: AssetPricingDetails,
     pub token_identifier: String,
     pub bias_tracker: Bias,
     pub funding_manager: FundingManager,
@@ -116,7 +116,7 @@ impl MarketDetails {
     pub fn deposit_liquidity(
         &mut self,
         deposit_amount: u128,
-        min_out: u128,
+        min_amount_out: u128,
     ) -> LiquidityOperationResult {
         let price_update = self
             .pricing_manager
@@ -143,7 +143,7 @@ impl MarketDetails {
                 mul_div(deposit_amount, *total_liquidity_tokens_minted, house_value)
             };
 
-            if liquidity_tokens_to_mint < min_out {
+            if liquidity_tokens_to_mint < min_amount_out {
                 return LiquidityOperationResult::Failed;
             }
             *total_deposit += deposit_amount;
@@ -188,6 +188,10 @@ impl MarketDetails {
                 free_liquidity,
                 ..
             } = liquidity_manager;
+
+            if *total_liquidity_tokens_minted == 0 {
+                return LiquidityOperationResult::Failed;
+            }
 
             let amount_of_assets_out = mul_div(
                 liquidity_tokens_in,
@@ -578,7 +582,7 @@ impl MarketDetails {
         return house_value as u128;
     }
     pub fn base_asset(&self) -> AssetPricingDetails {
-        self.asset_pricing_details.clone()
+        self.index_asset_pricing_details.clone()
     }
 
     fn get_cummulative_funding_factor_since_epoch(&mut self, is_long_position: bool) -> i128 {

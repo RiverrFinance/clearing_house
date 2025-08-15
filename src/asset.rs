@@ -1,9 +1,9 @@
-use candid::{CandidType, Nat, Principal, types::internal::Opcode};
+use candid::{CandidType, Nat, Principal};
 use ic_cdk::call::Call;
 use ic_ledger_types::{
     AccountIdentifier, BlockIndex, DEFAULT_FEE, DEFAULT_SUBACCOUNT, GetBlocksArgs, Memo, Operation,
-    QueryBlocksResponse, Subaccount as ICSubaccount, Tokens, Transaction,
-    TransferArgs as ICRCTransferArgs, query_blocks, transfer,
+    Subaccount as ICSubaccount, Tokens, Transaction, TransferArgs as ICRCTransferArgs,
+    query_blocks, transfer,
 };
 use icrc_ledger_types::{
     icrc1::{
@@ -14,7 +14,7 @@ use icrc_ledger_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::math::math::{apply_precision, to_precision};
+use crate::math::math::apply_precision;
 
 type Amount = u128;
 
@@ -40,24 +40,8 @@ pub struct AssetPricingDetails {
     pub class: AssetClass,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, CandidType)]
-pub struct OtherDetails {
-    pub ledger_id: Principal,
-    pub decimals: u32,
-    pub asset_type: AssetType,
-}
-
-impl Default for OtherDetails {
-    fn default() -> Self {
-        Self {
-            ledger_id: Principal::anonymous(),
-            decimals: 0,
-            asset_type: AssetType::ICP,
-        }
-    }
-}
-#[derive(Clone, Serialize, Copy, Deserialize, CandidType)]
-pub enum AssetType {
+#[derive(Serialize, Copy, Clone, Deserialize, CandidType)]
+pub enum AssetLedgerType {
     ICP,
     ICRC,
     RASSET,
@@ -65,39 +49,44 @@ pub enum AssetType {
 
 #[derive(Serialize, Deserialize, CandidType, Clone)]
 
-pub struct Asset {
-    pub pricing_details: AssetPricingDetails,
-    pub other_details: Option<OtherDetails>,
+pub struct AssetLedger {
+    pub ledger_id: Principal,
+    pub asset_decimals: u32,
+    pub ledger_type: AssetLedgerType,
 }
 
-impl Default for Asset {
+impl Default for AssetLedger {
     fn default() -> Self {
         Self {
-            pricing_details: AssetPricingDetails::default(),
-            other_details: None,
+            ledger_id: Principal::anonymous(),
+            asset_decimals: 0,
+            ledger_type: AssetLedgerType::ICRC,
         }
     }
 }
 
-impl Asset {
+impl AssetLedger {}
+
+impl AssetLedger {
     pub async fn _send_in(
         &self,
         amount: u128,
         from: Principal,
         block_index: Option<BlockIndex>,
+        token_identifier: Option<String>,
     ) -> bool {
-        let OtherDetails {
+        let Self {
             ledger_id,
-            decimals,
-            asset_type,
-        } = self.other_details.unwrap();
-        let factored_amout = apply_precision(amount, 10u128.pow(decimals));
+            asset_decimals: decimals,
+            ledger_type: asset_type,
+        } = self;
+        let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
 
         match asset_type {
-            AssetType::ICRC => {
+            AssetLedgerType::ICRC => {
                 let result = send_asset_in_asset_icrc(
                     factored_amout,
-                    ledger_id,
+                    *ledger_id,
                     Account {
                         owner: from,
                         subaccount: None,
@@ -111,10 +100,11 @@ impl Asset {
 
                 return result;
             }
-            AssetType::RASSET => {}
-            AssetType::ICP => {
+            AssetLedgerType::RASSET => {}
+            AssetLedgerType::ICP => {
                 let tx_result =
-                    _verify_deposit_in(from, factored_amout, ledger_id, block_index.unwrap()).await;
+                    _verify_deposit_in(from, factored_amout, *ledger_id, block_index.unwrap())
+                        .await;
                 return tx_result;
             }
         }
@@ -122,19 +112,24 @@ impl Asset {
         return false;
     }
 
-    pub async fn _send_out(&self, amount: u128, to: Principal) -> bool {
-        let OtherDetails {
+    pub async fn _send_out(
+        &self,
+        amount: u128,
+        to: Principal,
+        token_identifier: Option<String>,
+    ) -> bool {
+        let Self {
             ledger_id,
-            decimals,
-            asset_type,
-        } = self.other_details.unwrap();
-        let factored_amout = apply_precision(amount, 10u128.pow(decimals));
+            asset_decimals: decimals,
+            ledger_type: asset_type,
+        } = self;
+        let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
 
         match asset_type {
-            AssetType::ICP => {
+            AssetLedgerType::ICP => {
                 let tx_result = send_asset_out_icp(
                     factored_amout,
-                    ledger_id,
+                    *ledger_id,
                     None,
                     Account {
                         owner: to,
@@ -145,10 +140,10 @@ impl Asset {
 
                 return tx_result;
             }
-            AssetType::ICRC => {
+            AssetLedgerType::ICRC => {
                 let tx_result = send_asset_out_icrc(
                     factored_amout,
-                    ledger_id,
+                    *ledger_id,
                     None,
                     Account {
                         owner: to,
@@ -158,64 +153,23 @@ impl Asset {
                 .await;
                 return tx_result;
             }
-            AssetType::RASSET => {}
-        }
+            AssetLedgerType::RASSET => {
+                let tx_result =
+                    _send_out_rassets(to, amount, *ledger_id, token_identifier.unwrap()).await;
 
-        return true;
+                return tx_result;
+            }
+        }
     }
 }
 
-/// Verify Deposit In
-///
-///@dev Because the ICP ledger doesn't have  the transferFrom feature ,we can only verify transaction blocks on the ICP
-/// This is a custom implementation that verifies a deposit by using the block index of the transaction of the transaction
-/// so after user transfers icp to the canister principal null account (i.e AccountIdentifier with the default subaccount)
-/// the transaction returns the block index ,the user then cllas the deposit function  on this canister  with the block index as argument
-/// the cansiter verifies that the block has not been used and calls the ledger canister to verify the transaction
-async fn _verify_deposit_in(
+async fn _send_out_rassets(
     sender: Principal,
     deposit_amount: u128,
     ledger_id: Principal,
-    block_index: BlockIndex,
+    token_identifier: String,
 ) -> bool {
-    let args = GetBlocksArgs {
-        start: block_index,
-        length: 1,
-    };
-    let block = query_blocks(ledger_id, &args).await;
-    match block {
-        Ok(response) => {
-            let block = if response.blocks.get(0).is_some() {
-                response.blocks.get(0).unwrap().clone()
-            } else {
-                return false;
-            };
-
-            let Transaction { operation, .. } = block.transaction;
-
-            let op = if operation.is_some() {
-                operation.unwrap()
-            } else {
-                return false;
-            };
-            if let Operation::Transfer {
-                from, to, amount, ..
-            } = op
-            {
-                let verification = AccountIdentifier::new(&sender, &ICSubaccount([0; 32])) == from
-                    && amount == Tokens::from_e8s(deposit_amount as u64)
-                    && AccountIdentifier::new(
-                        &(ic_cdk::api::canister_self()),
-                        &ICSubaccount([0; 32]),
-                    ) == to;
-
-                return verification;
-            } else {
-                return false;
-            }
-        }
-        Err(_) => return false,
-    }
+    return false;
 }
 
 /// Transfers ICP tokens between accounts on the Internet Computer
@@ -234,17 +188,12 @@ async fn _verify_deposit_in(
 /// - Uses default fee and memo(0) for all transfers
 /// - Handles nested Result types from IC ledger response
 ///
-
 async fn send_asset_out_icp(
     amount: Amount,
     ledger_id: Principal,
     from_sub: Option<Subaccount>,
     to_account: Account,
 ) -> bool {
-    if amount == 0 {
-        return true;
-    }
-
     let args = ICRCTransferArgs {
         amount: Tokens::from_e8s(amount as u64),
         memo: Memo(0),
@@ -353,6 +302,59 @@ pub async fn send_asset_in_asset_icrc(
         return tx_result.is_ok();
     } else {
         return false;
+    }
+}
+
+/// Verify Deposit In
+///
+///@dev Because the ICP ledger doesn't have  the transferFrom feature ,we can only verify transaction blocks on the ICP
+/// This is a custom implementation that verifies a deposit by using the block index of the transaction of the transaction
+/// so after user transfers icp to the canister principal null account (i.e AccountIdentifier with the default subaccount)
+/// the transaction returns the block index ,the user then cllas the deposit function  on this canister  with the block index as argument
+/// the cansiter verifies that the block has not been used and calls the ledger canister to verify the transaction
+async fn _verify_deposit_in(
+    sender: Principal,
+    deposit_amount: u128,
+    ledger_id: Principal,
+    block_index: BlockIndex,
+) -> bool {
+    let args = GetBlocksArgs {
+        start: block_index,
+        length: 1,
+    };
+    let block = query_blocks(ledger_id, &args).await;
+    match block {
+        Ok(response) => {
+            let block = if response.blocks.get(0).is_some() {
+                response.blocks.get(0).unwrap().clone()
+            } else {
+                return false;
+            };
+
+            let Transaction { operation, .. } = block.transaction;
+
+            let op = if operation.is_some() {
+                operation.unwrap()
+            } else {
+                return false;
+            };
+            if let Operation::Transfer {
+                from, to, amount, ..
+            } = op
+            {
+                let verification = AccountIdentifier::new(&sender, &ICSubaccount([0; 32])) == from
+                    && amount == Tokens::from_e8s(deposit_amount as u64)
+                    && AccountIdentifier::new(
+                        &(ic_cdk::api::canister_self()),
+                        &ICSubaccount([0; 32]),
+                    ) == to;
+
+                return verification;
+            } else {
+                return false;
+            }
+        }
+        Err(_) => return false,
     }
 }
 

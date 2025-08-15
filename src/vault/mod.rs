@@ -1,7 +1,4 @@
-use crate::{
-    math::math::{_ONE_PERCENT, _percentage},
-    types::AssetPricingDetails,
-};
+use crate::math::math::{_ONE_PERCENT, _percentage};
 
 const YEAR: Time = 31_536_000_000_000_000;
 
@@ -213,12 +210,6 @@ impl Vault {
             expiry_time,
         );
     }
-}
-
-pub struct LiquidityManagerDetails {
-    pub asset: AssetPricingDetails,
-    pub virtual_asset: AssetPricingDetails,
-    pub min_amount: Amount,
 }
 
 #[derive(Default)]

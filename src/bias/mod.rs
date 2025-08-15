@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::math::math::{
-    Neg, apply_exponent, apply_precision, bound_below_signed, bound_signed, mul_div,
-};
+use crate::math::math::{Neg, apply_exponent, apply_precision, bound_signed, mul_div};
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct Bias {
