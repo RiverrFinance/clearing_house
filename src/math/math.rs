@@ -21,7 +21,7 @@ impl Neg for i128 {
 }
 
 impl Neg for u128 {
-    // returns as negative integer having the magnitude of self
+    /// returns as negative integer having the magnitude of self
     fn neg(&self) -> i128 {
         (*self as i128).neg()
     }

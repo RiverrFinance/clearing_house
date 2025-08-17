@@ -14,6 +14,7 @@ use crate::constants::ONE_HOUR_NANOSECONDS;
 use crate::market::{
     ClosePositionResult, LiquidityOperationResult, MarketDetails, OpenPositionResult,
 };
+use crate::math::math::{apply_precision, to_precision};
 use crate::position::Position;
 use crate::types::{Amount, GetExchangeRateRequest, GetExchangeRateResult, HouseDetails};
 
@@ -70,17 +71,6 @@ thread_local! {
     static MARKET_TIMER_MANAGER:RefCell<HashMap<u64,u64>> = RefCell::new(HashMap::new());
 
 
-}
-
-enum PriceWaitingOperation {
-    ClosePositionOp(u128, Position),
-    OpenPositionOp(u128, Position),
-    MarketLiquidityOp {
-        depositor: Principal,
-        deposit: u128,
-        min_amount_out: u128,
-    },
-    CollectBorrowingFeesOp,
 }
 
 /// Deposit function
@@ -184,7 +174,7 @@ pub fn open_position(
     long: bool,
     market_index: u64,
     collateral: u128,
-    leverage_x10: u8,
+    leverage: u128,
     acceptable_price_limit: u128,
     max_pnl: u128,
 ) {
@@ -202,7 +192,7 @@ pub fn open_position(
         user,
         market_index,
         collateral,
-        leverage_x10,
+        leverage,
         acceptable_price_limit,
         max_pnl,
         long,
@@ -286,7 +276,7 @@ pub fn _open_position(
     owner: Principal,
     market_index: u64,
     collateral: u128,
-    leverage_x10: u8,
+    leverage: u128,
     acceptable_price_limit: u128,
     max_pnl: u128,
     long: bool,
@@ -294,7 +284,7 @@ pub fn _open_position(
     MARKETS.with_borrow_mut(|reference| {
         let mut market = reference.get(market_index).unwrap();
 
-        let debt = (u128::from(leverage_x10 - 10) * collateral) / 10;
+        let debt = apply_precision(leverage, collateral) - collateral;
 
         let user_balance = get_user_balance(msg_caller());
 
@@ -425,11 +415,13 @@ async fn schedule_execution_of_wait_operations(market_index: u64) {
                     ..
                 } = *position;
 
+                let leverage = to_precision(debt + collateral, collateral);
+
                 let result = _open_position(
                     owner,
                     market_index,
                     collateral,
-                    (((debt + collateral) * 10) / collateral) as u8,
+                    leverage,
                     *acceptable_price_limit,
                     max_reserve,
                     long,
@@ -601,7 +593,7 @@ fn collect_borrow_fees(market_index: u64) {
 async fn _update_price(market_index: u64) {
     let mut market = MARKETS.with_borrow(|reference| reference.get(market_index).unwrap());
     let quote_asset = _get_house_asset_pricing_details();
-    let base_asset = market.base_asset();
+    let base_asset = market.index_asset_pricing_details();
     let xrc_canister = _get_xrc_id();
     let request = GetExchangeRateRequest {
         base_asset,
@@ -625,15 +617,28 @@ fn duration_in_hours(start_time: u64) -> u64 {
     return duration_in_nano_secs / ONE_HOUR_NANOSECONDS;
 }
 
+enum PriceWaitingOperation {
+    ClosePositionOp(u128, Position),
+    OpenPositionOp(u128, Position),
+    MarketLiquidityOp {
+        depositor: Principal,
+        deposit: u128,
+        min_amount_out: u128,
+    },
+    CollectBorrowingFeesOp,
+}
+
 export_candid!();
 
 pub mod asset;
 pub mod bias;
 pub mod constants;
-pub mod funding;
 pub mod market;
 pub mod math;
+pub mod oracle;
 pub mod position;
-pub mod pricing;
 pub mod types;
 pub mod vault;
+
+#[cfg(test)]
+pub mod unit_tests;
