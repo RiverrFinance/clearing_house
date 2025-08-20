@@ -18,6 +18,7 @@ use crate::math::math::apply_precision;
 
 type Amount = u128;
 
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[derive(Deserialize, Serialize, Copy, Clone, CandidType)]
 pub enum AssetClass {
     /// The cryptocurrency asset class.
@@ -32,6 +33,7 @@ impl Default for AssetClass {
     }
 }
 
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[derive(Clone, Serialize, Deserialize, Default, CandidType)]
 pub struct AssetPricingDetails {
     /// The symbol/code of the asset.

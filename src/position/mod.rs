@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use candid::Principal;
+use candid::{CandidType, Principal};
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,8 @@ use crate::math::math::{apply_precision, bound_above_signed, bound_below_signed}
 
 /// Position
 
-#[derive(Copy, Clone, Deserialize, Serialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[derive(Copy, Clone, Deserialize, CandidType, Serialize)]
 pub struct Position {
     /// Owner
     ///
@@ -133,9 +134,14 @@ impl Position {
 
         // if pnl is negative
         // the amount to add to free_liquidity is
+        // let position_value_without_funding_pay = bound_below_signed(
+        //     open_interest as i128 + position_pnl
+        //         - (open_interest + net_borrowing_fee + self.debt) as i128,
+        //     0,
+        // );
+
         let position_value_without_funding_pay = bound_below_signed(
-            open_interest as i128 + position_pnl
-                - (open_interest + net_borrowing_fee + self.debt) as i128,
+            open_interest as i128 + position_pnl - (net_borrowing_fee + self.debt) as i128,
             0,
         );
 
@@ -162,7 +168,7 @@ impl Position {
                     0,
                 );
 
-                // amount extractabel to house
+                // amount extractable to house
                 let position_loss = position_value_without_pnl.min(position_pnl_magnitude);
                 //
                 //
@@ -171,11 +177,15 @@ impl Position {
                 net_free_liquidity += (self.max_reserve as i128 - position_pnl_magnitude) as u128
             }
 
-            let delta = i128::max(
-                net_free_liquidity as i128 + position_value_without_funding_pay
-                    - net_funding_fee_magnitude,
-                0,
-            );
+            // if funding can not be paid by position,the cost is covered by the huse
+            // let delta = i128::max(
+            //     net_free_liquidity as i128 + position_value_without_funding_pay // basically free liquidity + anything remainng in position - net funding fee magnitude
+            //         - net_funding_fee_magnitude,
+            //     0,
+            // );
+
+            let delta = net_free_liquidity as i128 + position_value_without_funding_pay // basically free liquidity + anything remainng in position - net funding fee magnitude
+                    - net_funding_fee_magnitude;
 
             if delta >= 0 {
                 net_free_liquidity = delta as u128;
@@ -189,12 +199,16 @@ impl Position {
         return (net_free_liquidity, collateral_out, house_debt);
     }
 
-    pub fn get_net_borrowing_fee(&self, net_borrowing_factor: u128) -> u128 {
+    pub fn get_net_borrowing_fee(&self, current_cummulative_borrowing_factor: u128) -> u128 {
+        let net_borrowing_factor: u128 =
+            current_cummulative_borrowing_factor - self.pre_cummulative_borrowing_factor;
         let open_interest = self.open_interest();
         return apply_precision(net_borrowing_factor, open_interest);
     }
 
-    pub fn get_net_funding_fee(&self, net_funding_factor: i128) -> i128 {
+    pub fn get_net_funding_fee(&self, current_cummulative_funding_factor: i128) -> i128 {
+        let net_funding_factor: i128 =
+            current_cummulative_funding_factor - self.pre_cummulative_funding_factor;
         // if net_funding is positive return
         let sign = if net_funding_factor > 0 { 1 } else { -1 };
 

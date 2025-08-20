@@ -2,18 +2,17 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
-use candid::Principal;
+use candid::{CandidType, Principal};
 use ic_cdk::api::{msg_caller, time};
 use ic_cdk::call::Call;
-use ic_cdk::{export_candid, update};
+use ic_cdk::{export_candid, query, update};
 use ic_cdk_timers::TimerId;
 use ic_ledger_types::BlockIndex;
 
-use crate::asset::{AssetLedger, AssetPricingDetails};
+use crate::asset::AssetLedger;
 use crate::constants::ONE_HOUR_NANOSECONDS;
-use crate::market::{
-    ClosePositionResult, LiquidityOperationResult, MarketDetails, OpenPositionResult,
-};
+use crate::market::functions::open_position::OpenPositionResult;
+use crate::market::{ClosePositionResult, LiquidityOperationResult, MarketDetails};
 use crate::math::math::{apply_precision, to_precision};
 use crate::position::Position;
 use crate::types::{Amount, GetExchangeRateRequest, GetExchangeRateResult, HouseDetails};
@@ -73,6 +72,48 @@ thread_local! {
 
 }
 
+///
+/// get market details
+/// simulate open_position_with price
+/// get position_details
+/// get user positions
+/// get market_positions
+/// simulate_open_position
+#[query]
+pub fn get_market_detail(index: u64) -> MarketDetails {
+    _get_market_details(index)
+}
+
+#[query]
+pub fn get_user_positions(user: Principal) -> Vec<(u64, PositionFullDetails)> {
+    let mut positions: Vec<(u64, PositionFullDetails)> = Vec::new();
+    USERS_POSITIONS.with_borrow(|reference| {
+        for (owner, timer_id) in reference.keys() {
+            if owner == user {
+                let (market_index, _) = _get_user_position_details(owner, timer_id);
+
+                let position_full_details = _get_position_full_details(owner, timer_id);
+                positions.push((market_index, position_full_details));
+            }
+        }
+    });
+    return positions;
+}
+#[query]
+pub fn get_all_market_positions(index: u64) -> Vec<Position> {
+    let mut positions: Vec<Position> = Vec::new();
+
+    USERS_POSITIONS.with_borrow(|reference| {
+        for (market_index, position) in reference.values() {
+            if market_index == index {
+                positions.push(position)
+            }
+        }
+    });
+
+    return positions;
+}
+
 /// Deposit function
 ///
 /// Paramters
@@ -124,7 +165,7 @@ async fn deposit_liquidity(market_index: u64, amount: u128, min_amount_out: u128
 
     let user_balance = get_user_balance(depositor);
 
-    let execution_fee = _get_execution_fee();
+    let HouseDetails { execution_fee, .. } = _get_house_details();
 
     if amount + execution_fee > user_balance {
         return;
@@ -177,12 +218,12 @@ pub fn open_position(
     leverage: u128,
     acceptable_price_limit: u128,
     max_pnl: u128,
-) {
+) -> Option<Position> {
     let user = msg_caller();
 
     let user_balance = get_user_balance(user);
 
-    let execution_fee = _get_execution_fee();
+    let HouseDetails { execution_fee, .. } = _get_house_details();
 
     assert!(user_balance > execution_fee + collateral);
 
@@ -200,7 +241,10 @@ pub fn open_position(
 
     match result {
         OpenPositionResult::Settled { position } => {
+            update_user_balance(user, user_balance - collateral);
             put_user_position(user, market_index, position);
+
+            return Some(position);
         }
         OpenPositionResult::Waiting { position } => {
             let new_timer_id = _initiate_scheduling_for_price_wait_operation(market_index);
@@ -212,14 +256,10 @@ pub fn open_position(
                 true,
             );
 
-            return;
+            return Some(position);
         }
-        OpenPositionResult::Failed => {
-            return;
-        }
+        OpenPositionResult::Failed => return None,
     }
-
-    update_user_balance(user, user_balance - collateral);
 }
 
 ///
@@ -255,6 +295,10 @@ pub fn close_position(position_id: u64, acceptable_price_limit: u128) {
             return;
         }
     }
+}
+
+fn _get_market_details(index: u64) -> MarketDetails {
+    MARKETS.with_borrow(|reference| reference.get(index).expect("Market does not exist"))
 }
 
 pub fn _close_position(
@@ -496,12 +540,38 @@ fn _set_market_timer_detail(market_index: u64) {
     })
 }
 
-fn _get_execution_fee() -> u128 {
-    HOUSE_DETAILS.with_borrow(|reference| reference.get().execution_fee)
-}
+/// borrow fees paid,borrow fees
+/// funding fees paid
+/// current collateral
 
-fn _get_house_asset_pricing_details() -> AssetPricingDetails {
-    HOUSE_DETAILS.with_borrow(|reference| reference.get().house_asset_pricing_details.clone())
+#[derive(CandidType)]
+pub struct PositionFullDetails {
+    current_borrowing_fees_paid: u128,
+    current_funding_fees_paid: i128,
+    position: Position,
+}
+fn _get_position_full_details(owner: Principal, id: u64) -> PositionFullDetails {
+    let (market_index, position) = _get_user_position_details(owner, id);
+
+    let market = _get_market_details(market_index);
+
+    let current_cummulative_funding_factor =
+        market.get_cummulative_funding_factor_since_epoch(position.long);
+
+    let current_cummulative_borrowing_factor =
+        market.get_cummulative_borrowing_factor_since_epoch(position.long);
+
+    let current_borrowing_fees_paid =
+        position.get_net_borrowing_fee(current_cummulative_borrowing_factor);
+
+    let current_funding_fees_paid =
+        position.get_net_funding_fee(current_cummulative_funding_factor);
+
+    PositionFullDetails {
+        current_borrowing_fees_paid,
+        current_funding_fees_paid,
+        position,
+    }
 }
 
 fn _get_house_details() -> HouseDetails {
@@ -510,10 +580,6 @@ fn _get_house_details() -> HouseDetails {
 
 fn _get_markets_tokens_ledger_id() -> AssetLedger {
     HOUSE_DETAILS.with_borrow(|reference| reference.get().markets_tokens_ledger.clone())
-}
-
-fn _get_house_asset_decimals() -> u32 {
-    HOUSE_DETAILS.with_borrow(|reference| reference.get().house_asset_ledger.asset_decimals)
 }
 
 fn _get_admin() -> Principal {
@@ -592,7 +658,10 @@ fn collect_borrow_fees(market_index: u64) {
 
 async fn _update_price(market_index: u64) {
     let mut market = MARKETS.with_borrow(|reference| reference.get(market_index).unwrap());
-    let quote_asset = _get_house_asset_pricing_details();
+    let HouseDetails {
+        house_asset_pricing_details: quote_asset,
+        ..
+    } = _get_house_details();
     let base_asset = market.index_asset_pricing_details();
     let xrc_canister = _get_xrc_id();
     let request = GetExchangeRateRequest {
@@ -631,7 +700,6 @@ enum PriceWaitingOperation {
 export_candid!();
 
 pub mod asset;
-pub mod bias;
 pub mod constants;
 pub mod market;
 pub mod math;
