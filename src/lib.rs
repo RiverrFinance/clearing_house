@@ -14,25 +14,21 @@ use serde::{Deserialize, Serialize};
 use crate::asset::{
     AssetLedger, AssetPricingDetails, GetExchangeRateRequest, GetExchangeRateResult, XRC,
 };
-use crate::constants::ONE_HOUR_NANOSECONDS;
+use crate::constants::{
+    _ADMIN_MEMORY, _BALANCES_MEMORY, _HOUSE_DETAILS_MEMORY, _MARKETS_ARRAY_MEMORY, _XRC_MEMORY,
+    ONE_HOUR_NANOSECONDS,
+};
 use crate::market::functions::open_position::OpenPositionResult;
 use crate::market::{ClosePositionResult, LiquidityOperationResult, MarketDetails};
 use crate::math::math::{apply_precision, to_precision};
 use crate::position::Position;
 
-use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
+use ic_stable_structures::memory_manager::{MemoryManager, VirtualMemory};
 use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap, StableCell, StableVec, Storable};
 
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 
 const _ONE_SECOND: u64 = 1_000_000_000;
-
-const _ADMIN_MEMORY: MemoryId = MemoryId::new(1);
-
-const _MARKETS_ARRAY_MEMORY: MemoryId = MemoryId::new(2);
-// const _VAULT_MEMORY: MemoryId = MemoryId::new(3);
-const _BALANCES_MEMORY: MemoryId = MemoryId::new(4);
-const _POSITIONS_MEMORY: MemoryId = MemoryId::new(5);
 
 thread_local! {
       static MEMORY_MANAGER:RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default())) ;
@@ -40,6 +36,10 @@ thread_local! {
      static ADMIN:RefCell<StableCell<Principal,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
         tag.get(_ADMIN_MEMORY)
       }),Principal::anonymous()));
+
+     static XRC:RefCell<StableCell<Principal,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
+        tag.get(_XRC_MEMORY)
+      }), Principal::anonymous()));
 
       static MARKETS:RefCell<StableVec<MarketDetails,Memory>> = RefCell::new(StableVec::new(MEMORY_MANAGER.with(|s|{
         s.borrow().get(_MARKETS_ARRAY_MEMORY)
@@ -49,13 +49,8 @@ thread_local! {
         tag.get(_BALANCES_MEMORY)
       })));
 
-
-      static XRC:RefCell<StableCell<Principal,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_VAULT_MEMORY)
-      }), Principal::anonymous()));
-
       static HOUSE_DETAILS:RefCell<StableCell<HouseDetails,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_VAULT_MEMORY)
+        tag.get(_HOUSE_DETAILS_MEMORY)
       }), HouseDetails::default()));
 
     /// User amd TimeStamp
@@ -76,32 +71,33 @@ thread_local! {
 }
 
 #[init]
-pub fn init() {
+pub fn init(xrc_id: Principal, house_details: HouseDetails) {
     let admin = msg_caller();
+    ADMIN.with_borrow_mut(|reference| reference.set(admin));
+    XRC.with_borrow_mut(|reference| reference.set(xrc_id));
+
+    HOUSE_DETAILS.with_borrow_mut(|reference| reference.set(house_details));
 }
 
-///
-/// get market details
-/// simulate open_position_with price
-/// get position_details
-/// get user positions
-/// get market_positions
-/// simulate_open_position
 #[query(name = "getMarketDetails")]
 pub fn get_market_detail(index: u64) -> MarketDetails {
     _get_market_details(index)
 }
 
+/// Returns
+/// Tiemstamp
+/// Market Index
+/// PositionFullDetails
 #[query(name = "getUserPositions")]
-pub fn get_user_positions(user: Principal) -> Vec<(u64, PositionFullDetails)> {
-    let mut positions: Vec<(u64, PositionFullDetails)> = Vec::new();
+pub fn get_user_positions(user: Principal) -> Vec<(u64, u64, PositionFullDetails)> {
+    let mut positions: Vec<(u64, u64, PositionFullDetails)> = Vec::new();
     USERS_POSITIONS.with_borrow(|reference| {
         for (owner, timer_id) in reference.keys() {
             if owner == user {
                 let (market_index, _) = _get_user_position_details(owner, timer_id);
 
                 let position_full_details = _get_position_full_details(owner, timer_id);
-                positions.push((market_index, position_full_details));
+                positions.push((timer_id, market_index, position_full_details));
             }
         }
     });
@@ -190,7 +186,7 @@ async fn deposit_liquidity(
         LiquidityOperationResult::Settled { amount_out } => return Ok(amount_out),
         LiquidityOperationResult::Waiting => {
             let new_timer_id = _initiate_scheduling_for_price_wait_operation(market_index);
-            _put_waiting_position(
+            _put_price_waiting_operation(
                 market_index,
                 new_timer_id,
                 PriceWaitingOperation::MarketLiquidityOp {
@@ -263,7 +259,7 @@ pub fn open_position(
         OpenPositionResult::Waiting { position } => {
             let new_timer_id = _initiate_scheduling_for_price_wait_operation(market_index);
 
-            _put_waiting_position(
+            _put_price_waiting_operation(
                 market_index,
                 new_timer_id,
                 PriceWaitingOperation::OpenPositionOp(acceptable_price_limit, position),
@@ -298,7 +294,7 @@ pub fn close_position(position_id: u64, acceptable_price_limit: u128) {
         ClosePositionResult::Waiting { position } => {
             let new_timer_id = _initiate_scheduling_for_price_wait_operation(market_index);
 
-            _put_waiting_position(
+            _put_price_waiting_operation(
                 market_index,
                 new_timer_id,
                 PriceWaitingOperation::ClosePositionOp(acceptable_price_limit, position),
@@ -523,7 +519,7 @@ fn _remove_user_position_details(owner: Principal, id: u64) {
     USERS_POSITIONS.with_borrow_mut(|reference| reference.remove(&(owner, id)));
 }
 
-fn _put_waiting_position(
+fn _put_price_waiting_operation(
     market_index: u64,
     timer_id: TimerId,
     op: PriceWaitingOperation,
@@ -557,7 +553,6 @@ fn _set_market_timer_detail(market_index: u64) {
 /// borrow fees paid,borrow fees
 /// funding fees paid
 /// current collateral
-
 #[derive(CandidType)]
 pub struct PositionFullDetails {
     current_borrowing_fees_paid: u128,
@@ -661,7 +656,7 @@ fn collect_borrow_fees(market_index: u64) {
             ic_cdk::futures::spawn(schedule_execution_of_wait_operations(market_index));
         });
 
-        _put_waiting_position(
+        _put_price_waiting_operation(
             market_index,
             new_timer_id,
             PriceWaitingOperation::CollectBorrowingFeesOp,
