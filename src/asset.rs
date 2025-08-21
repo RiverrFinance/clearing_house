@@ -14,8 +14,6 @@ use icrc_ledger_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::math::math::apply_precision;
-
 type Amount = u128;
 
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
@@ -187,39 +185,40 @@ impl AssetLedger {
         block_index: Option<BlockIndex>,
         token_identifier: Option<String>,
     ) -> bool {
-        let Self {
-            ledger_id,
-            asset_decimals: decimals,
-            ledger_type: asset_type,
-        } = self;
-        let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
+        return true;
+        // let Self {
+        //     ledger_id,
+        //     asset_decimals: decimals,
+        //     ledger_type: asset_type,
+        // } = self;
+        // let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
 
-        match asset_type {
-            AssetLedgerType::ICRC => {
-                let result = send_asset_in_asset_icrc(
-                    factored_amout,
-                    *ledger_id,
-                    Account {
-                        owner: from,
-                        subaccount: None,
-                    },
-                    Account {
-                        owner: ic_cdk::api::canister_self(),
-                        subaccount: None,
-                    },
-                )
-                .await;
+        // match asset_type {
+        //     AssetLedgerType::ICRC => {
+        //         let result = send_asset_in_asset_icrc(
+        //             factored_amout,
+        //             *ledger_id,
+        //             Account {
+        //                 owner: from,
+        //                 subaccount: None,
+        //             },
+        //             Account {
+        //                 owner: ic_cdk::api::canister_self(),
+        //                 subaccount: None,
+        //             },
+        //         )
+        //         .await;
 
-                return result;
-            }
-            AssetLedgerType::RASSET => {}
-            AssetLedgerType::ICP => {
-                let tx_result =
-                    _verify_deposit_in(from, factored_amout, *ledger_id, block_index.unwrap())
-                        .await;
-                return tx_result;
-            }
-        }
+        //         return result;
+        //     }
+        //     AssetLedgerType::RASSET => {}
+        //     AssetLedgerType::ICP => {
+        //         let tx_result =
+        //             _verify_deposit_in(from, factored_amout, *ledger_id, block_index.unwrap())
+        //                 .await;
+        //         return tx_result;
+        //     }
+        // }
 
         return false;
     }
@@ -230,48 +229,49 @@ impl AssetLedger {
         to: Principal,
         token_identifier: Option<String>,
     ) -> bool {
-        let Self {
-            ledger_id,
-            asset_decimals: decimals,
-            ledger_type: asset_type,
-        } = self;
-        let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
+        return true;
+        // let Self {
+        //     ledger_id,
+        //     asset_decimals: decimals,
+        //     ledger_type: asset_type,
+        // } = self;
+        // let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
 
-        match asset_type {
-            AssetLedgerType::ICP => {
-                let tx_result = send_asset_out_icp(
-                    factored_amout,
-                    *ledger_id,
-                    None,
-                    Account {
-                        owner: to,
-                        subaccount: None,
-                    },
-                )
-                .await;
+        // match asset_type {
+        //     AssetLedgerType::ICP => {
+        //         let tx_result = send_asset_out_icp(
+        //             factored_amout,
+        //             *ledger_id,
+        //             None,
+        //             Account {
+        //                 owner: to,
+        //                 subaccount: None,
+        //             },
+        //         )
+        //         .await;
 
-                return tx_result;
-            }
-            AssetLedgerType::ICRC => {
-                let tx_result = send_asset_out_icrc(
-                    factored_amout,
-                    *ledger_id,
-                    None,
-                    Account {
-                        owner: to,
-                        subaccount: None,
-                    },
-                )
-                .await;
-                return tx_result;
-            }
-            AssetLedgerType::RASSET => {
-                let tx_result =
-                    _send_out_rassets(to, amount, *ledger_id, token_identifier.unwrap()).await;
+        //         return tx_result;
+        //     }
+        //     AssetLedgerType::ICRC => {
+        //         let tx_result = send_asset_out_icrc(
+        //             factored_amout,
+        //             *ledger_id,
+        //             None,
+        //             Account {
+        //                 owner: to,
+        //                 subaccount: None,
+        //             },
+        //         )
+        //         .await;
+        //         return tx_result;
+        //     }
+        //     AssetLedgerType::RASSET => {
+        //         let tx_result =
+        //             _send_out_rassets(to, amount, *ledger_id, token_identifier.unwrap()).await;
 
-                return tx_result;
-            }
-        }
+        //         return tx_result;
+        //     }
+        // }
     }
 }
 
@@ -281,7 +281,7 @@ async fn _send_out_rassets(
     ledger_id: Principal,
     token_identifier: String,
 ) -> bool {
-    return false;
+    return true;
 }
 
 /// Transfers ICP tokens between accounts on the Internet Computer
