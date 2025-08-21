@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use candid::{CandidType, Principal};
 use ic_cdk::api::{msg_caller, time};
-use ic_cdk::{export_candid, query, update};
+use ic_cdk::{export_candid, init, query, update};
 use ic_cdk_timers::TimerId;
 use ic_ledger_types::BlockIndex;
 use ic_stable_structures::storable::Bound;
@@ -30,7 +30,7 @@ const _ONE_SECOND: u64 = 1_000_000_000;
 const _ADMIN_MEMORY: MemoryId = MemoryId::new(1);
 
 const _MARKETS_ARRAY_MEMORY: MemoryId = MemoryId::new(2);
-const _VAULT_MEMORY: MemoryId = MemoryId::new(3);
+// const _VAULT_MEMORY: MemoryId = MemoryId::new(3);
 const _BALANCES_MEMORY: MemoryId = MemoryId::new(4);
 const _POSITIONS_MEMORY: MemoryId = MemoryId::new(5);
 
@@ -38,7 +38,7 @@ thread_local! {
       static MEMORY_MANAGER:RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default())) ;
 
      static ADMIN:RefCell<StableCell<Principal,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_VAULT_MEMORY)
+        tag.get(_ADMIN_MEMORY)
       }),Principal::anonymous()));
 
       static MARKETS:RefCell<StableVec<MarketDetails,Memory>> = RefCell::new(StableVec::new(MEMORY_MANAGER.with(|s|{
@@ -73,6 +73,11 @@ thread_local! {
     static MARKET_TIMER_MANAGER:RefCell<HashMap<u64,u64>> = RefCell::new(HashMap::new());
 
 
+}
+
+#[init]
+pub fn init() {
+    let admin = msg_caller();
 }
 
 ///
@@ -753,7 +758,6 @@ pub mod constants;
 pub mod market;
 pub mod math;
 pub mod position;
-pub mod vault;
 
 #[cfg(test)]
 pub mod unit_tests;
