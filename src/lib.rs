@@ -1,24 +1,27 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 use candid::{CandidType, Principal};
 use ic_cdk::api::{msg_caller, time};
-use ic_cdk::call::Call;
 use ic_cdk::{export_candid, query, update};
 use ic_cdk_timers::TimerId;
 use ic_ledger_types::BlockIndex;
+use ic_stable_structures::storable::Bound;
+use serde::{Deserialize, Serialize};
 
-use crate::asset::AssetLedger;
+use crate::asset::{
+    AssetLedger, AssetPricingDetails, GetExchangeRateRequest, GetExchangeRateResult, XRC,
+};
 use crate::constants::ONE_HOUR_NANOSECONDS;
 use crate::market::functions::open_position::OpenPositionResult;
 use crate::market::{ClosePositionResult, LiquidityOperationResult, MarketDetails};
 use crate::math::math::{apply_precision, to_precision};
 use crate::position::Position;
-use crate::types::{Amount, GetExchangeRateRequest, GetExchangeRateResult, HouseDetails};
 
 use ic_stable_structures::memory_manager::{MemoryId, MemoryManager, VirtualMemory};
-use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap, StableCell, StableVec};
+use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap, StableCell, StableVec, Storable};
 
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 
@@ -42,7 +45,7 @@ thread_local! {
         s.borrow().get(_MARKETS_ARRAY_MEMORY)
       })));
 
-      static USERS_BALANCES:RefCell<StableBTreeMap<Principal,Amount,Memory>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with_borrow(|tag|{
+      static USERS_BALANCES:RefCell<StableBTreeMap<Principal,u128,Memory>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with_borrow(|tag|{
         tag.get(_BALANCES_MEMORY)
       })));
 
@@ -79,12 +82,12 @@ thread_local! {
 /// get user positions
 /// get market_positions
 /// simulate_open_position
-#[query]
+#[query(name = "getMarketDetails")]
 pub fn get_market_detail(index: u64) -> MarketDetails {
     _get_market_details(index)
 }
 
-#[query]
+#[query(name = "getUserPositions")]
 pub fn get_user_positions(user: Principal) -> Vec<(u64, PositionFullDetails)> {
     let mut positions: Vec<(u64, PositionFullDetails)> = Vec::new();
     USERS_POSITIONS.with_borrow(|reference| {
@@ -99,7 +102,7 @@ pub fn get_user_positions(user: Principal) -> Vec<(u64, PositionFullDetails)> {
     });
     return positions;
 }
-#[query]
+#[query(name = "getAllMarketPositions")]
 pub fn get_all_market_positions(index: u64) -> Vec<Position> {
     let mut positions: Vec<Position> = Vec::new();
 
@@ -120,8 +123,8 @@ pub fn get_all_market_positions(index: u64) -> Vec<Position> {
 /// Amount:The amount of house asset to deposit with PRECISION ( see math/math.rs)
 /// Block Index :Optional parameter for block index ,utilized for  deposit of ICP token after sending to canister is
 /// (@dev see _verify_deposit_in function in asset.rs)
-#[ic_cdk::update(name = "depositAsset")]
-pub async fn deposit_asset(amount: u128, block_index: Option<BlockIndex>) {
+#[ic_cdk::update(name = "deposit")]
+pub async fn deposit(amount: u128, block_index: Option<BlockIndex>) {
     let user = msg_caller();
 
     let HouseDetails {
@@ -139,8 +142,8 @@ pub async fn deposit_asset(amount: u128, block_index: Option<BlockIndex>) {
     }
 }
 
-#[ic_cdk::update(name = "withdrawAsset")]
-pub async fn withdraw_asset(amount: u128) {
+#[ic_cdk::update(name = "withdraw")]
+pub async fn withdraw(amount: u128) {
     let user = msg_caller();
 
     let HouseDetails {
@@ -160,7 +163,11 @@ pub async fn withdraw_asset(amount: u128) {
 }
 
 #[update(name = "depositLiquidity")]
-async fn deposit_liquidity(market_index: u64, amount: u128, min_amount_out: u128) {
+async fn deposit_liquidity(
+    market_index: u64,
+    amount: u128,
+    min_amount_out: u128,
+) -> Result<u128, String> {
     let depositor = msg_caller();
 
     let user_balance = get_user_balance(depositor);
@@ -168,14 +175,14 @@ async fn deposit_liquidity(market_index: u64, amount: u128, min_amount_out: u128
     let HouseDetails { execution_fee, .. } = _get_house_details();
 
     if amount + execution_fee > user_balance {
-        return;
+        return Err(String::from("Insufficient Balance"));
     }
 
     update_user_balance(depositor, user_balance - execution_fee);
     let result = _deposit_liquidity(market_index, depositor, amount, min_amount_out).await;
 
     match result {
-        LiquidityOperationResult::Settled { amount_out: _ } => {}
+        LiquidityOperationResult::Settled { amount_out } => return Ok(amount_out),
         LiquidityOperationResult::Waiting => {
             let new_timer_id = _initiate_scheduling_for_price_wait_operation(market_index);
             _put_waiting_position(
@@ -188,9 +195,11 @@ async fn deposit_liquidity(market_index: u64, amount: u128, min_amount_out: u128
                 },
                 false,
             );
+            return Err(String::from("Waiting for price update"));
         }
         LiquidityOperationResult::Failed => {
             update_user_balance(depositor, user_balance + execution_fee);
+            return Err(String::from("Operation failed "));
         }
     }
 
@@ -590,7 +599,7 @@ fn _get_xrc_id() -> Principal {
     XRC.with_borrow(|reference| reference.get().clone())
 }
 
-fn get_user_balance(user: Principal) -> Amount {
+fn get_user_balance(user: Principal) -> u128 {
     USERS_BALANCES.with_borrow(|tag| tag.get(&user).unwrap_or_default())
 }
 
@@ -663,18 +672,15 @@ async fn _update_price(market_index: u64) {
         ..
     } = _get_house_details();
     let base_asset = market.index_asset_pricing_details();
-    let xrc_canister = _get_xrc_id();
+    let xrc_canister_id = _get_xrc_id();
+    let xrc = XRC::init(xrc_canister_id);
     let request = GetExchangeRateRequest {
         base_asset,
         quote_asset,
         timestamp: None,
     };
 
-    let call = Call::unbounded_wait(xrc_canister, "get_exchange_rate")
-        .with_arg(request)
-        .with_cycles(1_000_000_000);
-
-    let result: GetExchangeRateResult = call.await.unwrap().candid().unwrap();
+    let result: GetExchangeRateResult = xrc._get_exchange_rate(request).await;
     if let Ok(response) = result {
         market._update_price(response.rate, response.metadata.decimals);
     }
@@ -697,15 +703,56 @@ enum PriceWaitingOperation {
     CollectBorrowingFeesOp,
 }
 
+#[derive(Serialize, Deserialize, CandidType, Clone)]
+pub struct HouseDetails {
+    pub house_asset_ledger: AssetLedger,
+    pub house_asset_pricing_details: AssetPricingDetails,
+    pub markets_tokens_ledger: AssetLedger,
+    pub execution_fee: u128,
+    pub execution_fee_collected: u128,
+}
+
+impl Default for HouseDetails {
+    fn default() -> Self {
+        Self {
+            markets_tokens_ledger: AssetLedger::default(),
+            house_asset_pricing_details: AssetPricingDetails::default(),
+            execution_fee: 0,
+            house_asset_ledger: AssetLedger::default(),
+            execution_fee_collected: 0,
+        }
+    }
+}
+
+impl Storable for HouseDetails {
+    fn to_bytes(&self) -> Cow<'_, [u8]> {
+        let serialized = bincode::serialize(self).expect("failed to serialize");
+        Cow::Owned(serialized)
+    }
+
+    /// Converts the element into an owned byte vector.
+    ///
+    /// This method consumes `self` and avoids cloning when possible.
+    fn into_bytes(self) -> Vec<u8> {
+        bincode::serialize(&self).expect("failed to serialize")
+    }
+
+    /// Converts bytes into an element.
+    fn from_bytes(bytes: Cow<[u8]>) -> Self {
+        bincode::deserialize(bytes.as_ref()).expect("failed to desearalize")
+    }
+
+    /// The size bounds of the type.
+    const BOUND: Bound = Bound::Unbounded;
+}
+
 export_candid!();
 
 pub mod asset;
 pub mod constants;
 pub mod market;
 pub mod math;
-pub mod oracle;
 pub mod position;
-pub mod types;
 pub mod vault;
 
 #[cfg(test)]
