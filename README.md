@@ -209,7 +209,7 @@ River Borrowing fees use the curve model.
 To use the curve model, the keys to configure would be `BORROWING_FACTOR` and `BORROWING_EXPONENT_FACTOR`, the borrowing factor per second would be calculated as:
 
 - borrowing_factor_per_sec = borrowing_factor \* (reserve_value^ borrowing_factor_exponent)/ pool_value_inactive
-  where
+   where
 - reserve value : the total amount reserved for positions
 - pool_value_inactive :pool_value -= traders pnl
 
@@ -274,7 +274,7 @@ cargo build --release --target wasm32-unknown-unknown --package clearing_house
 To extract .did file
 
 ```sh
-   candid-extractor target/wasm32-unknown-unknown/release/clearing_house.wasm > clearing_house.did
+   candid-extractor target/wasm32-unknown-unknown/release/clearing_house.wasm > src/clearing_house.did
 ```
 
 To run all tests:

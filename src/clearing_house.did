@@ -1,4 +1,10 @@
 type AssetClass = variant { Cryptocurrency; FiatCurrency };
+type AssetLedger = record {
+  ledger_id : principal;
+  ledger_type : AssetLedgerType;
+  asset_decimals : nat32;
+};
+type AssetLedgerType = variant { ICP; ICRC; RASSET };
 type AssetPricingDetails = record { class : AssetClass; symbol : text };
 type Bias = record { shorts : BiasDetails; longs : BiasDetails };
 type BiasDetails = record {
@@ -24,6 +30,13 @@ type FundingManager = record {
   max_funding_factor_ps : nat;
   min_funding_factor_ps : nat;
   funding_factor : nat;
+};
+type HouseDetails = record {
+  markets_tokens_ledger : AssetLedger;
+  execution_fee_collected : nat;
+  house_asset_ledger : AssetLedger;
+  house_asset_pricing_details : AssetPricingDetails;
+  execution_fee : nat;
 };
 type HouseLiquidityManager = record {
   free_liquidity : nat;
@@ -75,7 +88,8 @@ type PricingManager = record {
   last_fetched : nat64;
   price : nat;
 };
-service : {
+type Result = variant { Ok : nat; Err : text };
+service : (principal, HouseDetails) -> {
   // 
   // Close Position Function
   // 
@@ -89,19 +103,16 @@ service : {
   // Amount:The amount of house asset to deposit with PRECISION ( see math/math.rs)
   // Block Index :Optional parameter for block index ,utilized for  deposit of ICP token after sending to canister is
   // (@dev see _verify_deposit_in function in asset.rs)
-  depositAsset : (nat, opt nat64) -> ();
-  depositLiquidity : (nat64, nat, nat) -> ();
-  get_all_market_positions : (nat64) -> (vec Position) query;
-  // 
-  // get market details
-  // simulate open_position_with price
-  // get position_details
-  // get user positions
-  // get market_positions
-  // simulate_open_position
-  get_market_detail : (nat64) -> (MarketDetails) query;
-  get_user_positions : (principal) -> (
-      vec record { nat64; PositionFullDetails },
+  deposit : (nat, opt nat64) -> ();
+  depositLiquidity : (nat64, nat, nat) -> (Result);
+  getAllMarketPositions : (nat64) -> (vec Position) query;
+  getMarketDetails : (nat64) -> (MarketDetails) query;
+  // Returns
+  // Tiemstamp
+  // Market Index
+  // PositionFullDetails
+  getUserPositions : (principal) -> (
+      vec record { nat64; nat64; PositionFullDetails },
     ) query;
   // Open Position function
   // 
@@ -118,5 +129,5 @@ service : {
   // 
   openPosition : (bool, nat64, nat, nat, nat, nat) -> (opt Position);
   start_timer_for_market : (nat64) -> ();
-  withdrawAsset : (nat) -> ();
+  withdraw : (nat) -> ();
 }

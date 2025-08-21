@@ -628,6 +628,13 @@ fn admin_guard() -> Result<(), String> {
     })
 }
 
+#[update(name = "addMarket", guard = "admin_guard")]
+pub fn add_market(details: MarketDetails) {
+    MARKETS.with_borrow_mut(|reference| {
+        reference.push(&details);
+    })
+}
+
 #[update(guard = "admin_guard")]
 pub fn start_timer_for_market(market_index: u64) {
     ic_cdk_timers::set_timer_interval(Duration::from_secs(60), move || {
