@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 use candid::{CandidType, Principal};
+use getrandom;
 use ic_cdk::api::{msg_caller, time};
 use ic_cdk::{export_candid, init, query, update};
 use ic_cdk_timers::TimerId;
@@ -15,7 +16,7 @@ use crate::asset::{
     AssetLedger, AssetPricingDetails, GetExchangeRateRequest, GetExchangeRateResult, XRC,
 };
 use crate::constants::{
-    _ADMIN_MEMORY, _BALANCES_MEMORY, _HOUSE_DETAILS_MEMORY, _MARKETS_ARRAY_MEMORY, _XRC_MEMORY,
+    _ADMIN_MEMORY, _BALANCES_MEMORY, _HOUSE_DETAILS_MEMORY, _MARKETS_MEMORY, _XRC_MEMORY,
     ONE_HOUR_NANOSECONDS,
 };
 use crate::market::functions::open_position::OpenPositionResult;
@@ -37,26 +38,28 @@ thread_local! {
         tag.get(_ADMIN_MEMORY)
       }),Principal::anonymous()));
 
+    static HOUSE_DETAILS:RefCell<StableCell<HouseDetails,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
+        tag.get(_HOUSE_DETAILS_MEMORY)
+      }), HouseDetails::default()));
+
+
      static XRC:RefCell<StableCell<Principal,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
         tag.get(_XRC_MEMORY)
       }), Principal::anonymous()));
 
       static MARKETS:RefCell<StableVec<MarketDetails,Memory>> = RefCell::new(StableVec::new(MEMORY_MANAGER.with(|s|{
-        s.borrow().get(_MARKETS_ARRAY_MEMORY)
+        s.borrow().get(_MARKETS_MEMORY)
       })));
 
       static USERS_BALANCES:RefCell<StableBTreeMap<Principal,u128,Memory>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with_borrow(|tag|{
         tag.get(_BALANCES_MEMORY)
       })));
 
-      static HOUSE_DETAILS:RefCell<StableCell<HouseDetails,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_HOUSE_DETAILS_MEMORY)
-      }), HouseDetails::default()));
 
     /// User amd TimeStamp
 
     static USERS_POSITIONS:RefCell<StableBTreeMap<(Principal,u64),(u64,Position),Memory>> = RefCell::new(StableBTreeMap::new(MEMORY_MANAGER.with(|s|{
-        s.borrow().get(_MARKETS_ARRAY_MEMORY)
+        s.borrow().get(_MARKETS_MEMORY)
       })));
 
     static MARKET_PRICE_WAITING_OPERATION:RefCell<HashMap<u64,(TimerId,VecDeque<PriceWaitingOperation>)>> = RefCell::new(HashMap::new());
@@ -716,7 +719,6 @@ pub struct HouseDetails {
     pub house_asset_pricing_details: AssetPricingDetails,
     pub markets_tokens_ledger: AssetLedger,
     pub execution_fee: u128,
-    pub execution_fee_collected: u128,
 }
 
 impl Default for HouseDetails {
@@ -726,7 +728,6 @@ impl Default for HouseDetails {
             house_asset_pricing_details: AssetPricingDetails::default(),
             execution_fee: 0,
             house_asset_ledger: AssetLedger::default(),
-            execution_fee_collected: 0,
         }
     }
 }

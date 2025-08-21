@@ -33,7 +33,6 @@ type FundingManager = record {
 };
 type HouseDetails = record {
   markets_tokens_ledger : AssetLedger;
-  execution_fee_collected : nat;
   house_asset_ledger : AssetLedger;
   house_asset_pricing_details : AssetPricingDetails;
   execution_fee : nat;
@@ -90,6 +89,7 @@ type PricingManager = record {
 };
 type Result = variant { Ok : nat; Err : text };
 service : (principal, HouseDetails) -> {
+  addMarket : (MarketDetails) -> ();
   // 
   // Close Position Function
   // 
