@@ -1,3 +1,4 @@
+type AddLiquidityToMarketParams = record { min_amount_out : nat; amount : nat };
 type AssetClass = variant { Cryptocurrency; FiatCurrency };
 type AssetLedger = record {
   ledger_id : principal;
@@ -19,6 +20,16 @@ type BiasDetails = record {
   total_debt_of_traders : nat;
   total_reserve : nat;
 };
+type ClosePositionParams = record {
+  acceptable_price_limit : nat;
+  position_id : nat64;
+};
+type ClosePositionResult = variant {
+  Failed;
+  Waiting;
+  Settled : record { returns : nat };
+};
+type DepositParams = record { block_index : opt nat64; amount : nat };
 type FundingManager = record {
   threshold_stable_funding : nat;
   last_time_updated : nat64;
@@ -62,10 +73,24 @@ type MarketDetails = record {
 };
 type MarketState = record {
   liquidation_factor : nat;
-  max_pnl_factor : nat;
-  max_leverage : nat;
+  max_leverage_factor : nat;
+  max_reserve_factor : nat;
 };
-type Position = record {
+type OpenPositionParams = record {
+  acceptable_price_limit : nat;
+  owner : principal;
+  long : bool;
+  collateral : nat;
+  reserve_factor : nat;
+  market_index : nat64;
+  leverage_factor : nat;
+};
+type OpenPositioninMarketResult = variant {
+  Failed;
+  Waiting : record { params : OpenPositionParams };
+  Settled : record { position : PositionDetails };
+};
+type PositionDetails = record {
   pre_cummulative_funding_factor : int;
   max_reserve : nat;
   owner : principal;
@@ -75,11 +100,6 @@ type Position = record {
   pre_cummulative_borrowing_factor : nat;
   units : nat;
 };
-type PositionFullDetails = record {
-  current_funding_fees_paid : int;
-  current_borrowing_fees_paid : nat;
-  position : Position;
-};
 type PricingManager = record {
   negative_price_impact_factor : nat;
   price_impact_exponent_factor : nat;
@@ -87,47 +107,23 @@ type PricingManager = record {
   last_fetched : nat64;
   price : nat;
 };
+type RemoveLiquidityFromMarketParams = record {
+  min_amount_out : nat;
+  amount_in : nat;
+};
 type Result = variant { Ok : nat; Err : text };
+type WithdrawParams = record { amount : nat };
 service : (principal, HouseDetails) -> {
+  addLiquidity : (nat64, AddLiquidityToMarketParams) -> (Result);
   addMarket : (MarketDetails) -> ();
-  // 
-  // Close Position Function
-  // 
-  // Params
-  // ID - The ID correponding to the user's position
-  // ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
-  closePosition : (nat64, nat) -> ();
-  // Deposit function
-  // 
-  // Paramters
-  // Amount:The amount of house asset to deposit with PRECISION ( see math/math.rs)
-  // Block Index :Optional parameter for block index ,utilized for  deposit of ICP token after sending to canister is
-  // (@dev see _verify_deposit_in function in asset.rs)
-  deposit : (nat, opt nat64) -> ();
-  depositLiquidity : (nat64, nat, nat) -> (Result);
-  getAllMarketPositions : (nat64) -> (vec Position) query;
-  getMarketDetails : (nat64) -> (MarketDetails) query;
-  // Returns
-  // Tiemstamp
-  // Market Index
-  // PositionFullDetails
-  getUserPositions : (principal) -> (
-      vec record { nat64; nat64; PositionFullDetails },
-    ) query;
-  // Open Position function
-  // 
-  // Parameters
-  // 
-  // LONG:true for long and false for a short
-  // MARKET_INDEX: The market index of the respective market
-  // COLLLATERAL :The amount set as collateral for opening position
-  // LEVERAGE_X10 :The leverage to take multiplied by 10
-  // ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
-  // MAX_PNL - This serves as the max reserve for the position
-  // 
-  // @dev MAX_PNL serves as a virtual take profit point see README.md file for proper documentation
-  // 
-  openPosition : (bool, nat64, nat, nat, nat, nat) -> (opt Position);
-  start_timer_for_market : (nat64) -> ();
-  withdraw : (nat) -> ();
+  closePosition : (ClosePositionParams) -> (ClosePositionResult);
+  deposit : (DepositParams) -> ();
+  get_market_details : (nat64) -> (opt MarketDetails) query;
+  get_markets_count : () -> (nat64) query;
+  get_user_balance : (principal) -> (nat) query;
+  get_user_market_liquidity_shares : (principal, nat64) -> (nat) query;
+  open_position : (OpenPositionParams) -> (OpenPositioninMarketResult);
+  remove_liquidity : (nat64, RemoveLiquidityFromMarketParams) -> ();
+  setAdmin : (principal) -> ();
+  withdraw : (WithdrawParams) -> ();
 }

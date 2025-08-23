@@ -10,6 +10,7 @@ use deposit::deposit_params::DepositParams;
 use market::functions::open_position_in_market::OpenPositioninMarketResult;
 use market::market_details::MarketDetails;
 use open_position::open_position_params::OpenPositionParams;
+use remove_liquidity::remove_liquidity_params::RemoveLiquidityFromMarketParams;
 use withdraw::withdraw_params::WithdrawParams;
 
 // Module declarations
@@ -42,12 +43,13 @@ pub use admin::admin_functions::add_market;
 pub use close_position::close_position::close_position;
 pub use deposit::deposit::deposit;
 pub use open_position::open_position::open_position;
+pub use remove_liquidity::remove_liquidity::remove_liquidity;
 pub use withdraw::withdraw::withdraw;
 
 // Query functions
 
 pub use market::query_utils::{get_market_details, get_markets_count};
-pub use user::balance_utils::{get_my_balance, get_user_balance};
+pub use user::balance_utils::get_user_balance;
 
 use crate::{
     house_settings::HouseDetails,
