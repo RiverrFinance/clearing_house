@@ -1,0 +1,133 @@
+type AssetClass = variant { Cryptocurrency; FiatCurrency };
+type AssetLedger = record {
+  ledger_id : principal;
+  ledger_type : AssetLedgerType;
+  asset_decimals : nat32;
+};
+type AssetLedgerType = variant { ICP; ICRC; RASSET };
+type AssetPricingDetails = record { class : AssetClass; symbol : text };
+type Bias = record { shorts : BiasDetails; longs : BiasDetails };
+type BiasDetails = record {
+  total_open_interest_dynamic : int;
+  total_open_interest : nat;
+  current_borrowing_factor : nat;
+  total_units : nat;
+  cummulative_borrowing_factor_since_epoch : nat;
+  borrowing_exponent_factor_ : nat;
+  cummulative_funding_factor_since_epoch : int;
+  base_borrowing_factor : nat;
+  total_debt_of_traders : nat;
+  total_reserve : nat;
+};
+type FundingManager = record {
+  threshold_stable_funding : nat;
+  last_time_updated : nat64;
+  funding_increase_factor_ps : nat;
+  funding_exponent_factor : nat;
+  funding_decrease_factor_ps : nat;
+  next_funding_factor_ps : int;
+  threshold_decrease_funding : nat;
+  max_funding_factor_ps : nat;
+  min_funding_factor_ps : nat;
+  funding_factor : nat;
+};
+type HouseDetails = record {
+  markets_tokens_ledger : AssetLedger;
+  execution_fee_collected : nat;
+  house_asset_ledger : AssetLedger;
+  house_asset_pricing_details : AssetPricingDetails;
+  execution_fee : nat;
+};
+type HouseLiquidityManager = record {
+  free_liquidity : nat;
+  liquidation_factor : nat;
+  current_shorts_reserve : nat;
+  total_liquidity_tokens_minted : nat;
+  current_longs_reserve : nat;
+  last_time_since_borrow_fees_collected : nat64;
+  current_borrow_fees_owed : nat;
+  bad_debt : nat;
+  shorts_max_reserve_factor : nat;
+  longs_max_reserve_factor : nat;
+  current_net_debt : nat;
+  total_deposit : nat;
+};
+type MarketDetails = record {
+  bias_tracker : Bias;
+  state : MarketState;
+  pricing_manager : PricingManager;
+  token_identifier : text;
+  funding_manager : FundingManager;
+  index_asset_pricing_details : AssetPricingDetails;
+  liquidity_manager : HouseLiquidityManager;
+};
+type MarketState = record {
+  liquidation_factor : nat;
+  max_pnl_factor : nat;
+  max_leverage : nat;
+};
+type Position = record {
+  pre_cummulative_funding_factor : int;
+  max_reserve : nat;
+  owner : principal;
+  debt : nat;
+  long : bool;
+  collateral : nat;
+  pre_cummulative_borrowing_factor : nat;
+  units : nat;
+};
+type PositionFullDetails = record {
+  current_funding_fees_paid : int;
+  current_borrowing_fees_paid : nat;
+  position : Position;
+};
+type PricingManager = record {
+  negative_price_impact_factor : nat;
+  price_impact_exponent_factor : nat;
+  positive_price_impact_factor : nat;
+  last_fetched : nat64;
+  price : nat;
+};
+type Result = variant { Ok : nat; Err : text };
+service : (principal, HouseDetails) -> {
+  // 
+  // Close Position Function
+  // 
+  // Params
+  // ID - The ID correponding to the user's position
+  // ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
+  closePosition : (nat64, nat) -> ();
+  // Deposit function
+  // 
+  // Paramters
+  // Amount:The amount of house asset to deposit with PRECISION ( see math/math.rs)
+  // Block Index :Optional parameter for block index ,utilized for  deposit of ICP token after sending to canister is
+  // (@dev see _verify_deposit_in function in asset.rs)
+  deposit : (nat, opt nat64) -> ();
+  depositLiquidity : (nat64, nat, nat) -> (Result);
+  getAllMarketPositions : (nat64) -> (vec Position) query;
+  getMarketDetails : (nat64) -> (MarketDetails) query;
+  // Returns
+  // Tiemstamp
+  // Market Index
+  // PositionFullDetails
+  getUserPositions : (principal) -> (
+      vec record { nat64; nat64; PositionFullDetails },
+    ) query;
+  // Open Position function
+  // 
+  // Parameters
+  // 
+  // LONG:true for long and false for a short
+  // MARKET_INDEX: The market index of the respective market
+  // COLLLATERAL :The amount set as collateral for opening position
+  // LEVERAGE_X10 :The leverage to take multiplied by 10
+  // ACCEPTABLE_PRICE_LIMIT - The limit price allowed for closing position also correpsonds to maximum slippage price
+  // MAX_PNL - This serves as the max reserve for the position
+  // 
+  // @dev MAX_PNL serves as a virtual take profit point see README.md file for proper documentation
+  // 
+  openPosition : (bool, nat64, nat, nat, nat, nat) -> (opt Position);
+  start_timer_for_market : (nat64) -> ();
+  withdraw : (nat) -> ();
+}
