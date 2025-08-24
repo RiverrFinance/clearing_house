@@ -1,5 +1,5 @@
-use crate::stable_memory::{MARKET_TIMER_MANAGER, MARKETS};
 use crate::market::market_details::MarketDetails;
+use crate::stable_memory::{MARKET_TIMER_MANAGER, MARKETS};
 use ic_cdk::query;
 
 pub fn _get_market_timer_details(market_index: u64) -> u64 {
