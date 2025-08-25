@@ -35,7 +35,7 @@ thread_local! {
         tag.get(_XRC_MEMORY)
       }), Principal::anonymous()));
 
-    pub static MARKETS:RefCell<StableVec<MarketDetails,Memory>> = RefCell::new(StableVec::new(MEMORY_MANAGER.with(|s|{
+    pub static MARKETS_WITH_LAST_PRICE_UPDATE_TIME:RefCell<StableVec<(MarketDetails,u64),Memory>> = RefCell::new(StableVec::new(MEMORY_MANAGER.with(|s|{
         s.borrow().get(_MARKETS_MEMORY)
       })));
 

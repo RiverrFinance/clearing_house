@@ -1,46 +1,30 @@
 use crate::{
     add_liquidity::add_liquidity_params::AddLiquidityToMarketParams,
-    constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL,
     market::market_details::{LiquidityOperationResult, MarketDetails},
     math::math::mul_div,
-    pricing_update_management::price_fetch::_fetch_price,
 };
 
 use crate::market::components::liquidity_manager::HouseLiquidityManager;
 
 impl MarketDetails {
-    pub async fn add_liquidity_to_market(
+    pub fn add_liquidity_to_market(
         &mut self,
         params: AddLiquidityToMarketParams,
     ) -> LiquidityOperationResult {
-        let price_update = self
-            .pricing_manager
-            .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
+        let price_update = self.pricing_manager.get_price();
+        //.get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
         self._add_liquidity_to_market_with_price(params, price_update)
-            .await
     }
 
-    pub async fn _add_liquidity_to_market_with_price(
+    pub fn _add_liquidity_to_market_with_price(
         &mut self,
         params: AddLiquidityToMarketParams,
-        price_update: Option<u128>,
+        price: u128,
     ) -> LiquidityOperationResult {
         let AddLiquidityToMarketParams {
             amount,
             min_amount_out,
         } = params;
-
-        let price = match price_update {
-            Some(price) => price,
-            None => {
-                let Ok((price, decimal)) = _fetch_price(self.index_asset_pricing_details()).await
-                else {
-                    return LiquidityOperationResult::Failed;
-                };
-
-                self._update_price(price, decimal)
-            }
-        };
 
         let house_value = self._house_value(price);
 

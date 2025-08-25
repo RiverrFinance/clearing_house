@@ -17,6 +17,12 @@ pub fn put_user_position_detail(
     });
 }
 
+pub fn remove_user_position_detail(user: Principal, position_id: u64) {
+    USERS_POSITIONS.with_borrow_mut(|reference| {
+        reference.remove(&(user, position_id));
+    });
+}
+
 pub fn try_get_user_position_details(
     user: Principal,
     position_id: u64,

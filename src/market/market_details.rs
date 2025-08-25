@@ -12,6 +12,7 @@ use crate::market::components::pricing::PricingManager;
 use crate::math::math::to_precision;
 use crate::pricing_update_management::price_fetch::AssetPricingDetails;
 
+#[derive(CandidType, Deserialize)]
 pub enum LiquidityOperationResult {
     Settled { amount_out: u128 },
     Waiting,

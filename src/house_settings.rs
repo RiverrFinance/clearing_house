@@ -12,7 +12,6 @@ use crate::stable_memory::HOUSE_SETTINGS;
 pub struct HouseDetails {
     pub house_asset_ledger: AssetLedger,
     pub house_asset_pricing_details: AssetPricingDetails,
-    pub markets_tokens_ledger: AssetLedger,
     pub execution_fee: u128,
 }
 
@@ -24,9 +23,9 @@ pub fn get_execution_fee() -> u128 {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().execution_fee)
 }
 
-pub fn get_markets_tokens_ledger() -> AssetLedger {
-    HOUSE_SETTINGS.with_borrow(|reference| reference.get().markets_tokens_ledger)
-}
+// pub fn get_markets_tokens_ledger() -> AssetLedger {
+//     HOUSE_SETTINGS.with_borrow(|reference| reference.get().markets_tokens_ledger)
+// }
 
 pub fn get_house_asset_pricing_details() -> AssetPricingDetails {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().house_asset_pricing_details.clone())
@@ -35,7 +34,7 @@ pub fn get_house_asset_pricing_details() -> AssetPricingDetails {
 impl Default for HouseDetails {
     fn default() -> Self {
         Self {
-            markets_tokens_ledger: AssetLedger::default(),
+            // markets_tokens_ledger: AssetLedger::default(),
             house_asset_pricing_details: AssetPricingDetails::default(),
             execution_fee: 0,
             house_asset_ledger: AssetLedger::default(),

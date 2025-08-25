@@ -13,6 +13,11 @@ pub fn get_user_market_liquidity_shares(user: Principal, market_index: u64) -> u
         .with_borrow(|reference| reference.get(&(user, market_index)).unwrap_or_default())
 }
 
+pub fn set_user_market_liquidity_shares(user: Principal, market_index: u64, amount: u128) {
+    USER_MARKET_LIQUIDTY_SHARES_BALANCES
+        .with_borrow_mut(|reference| reference.insert((user, market_index), amount));
+}
+
 pub fn update_user_market_liquidity_shares(
     user: Principal,
     market_index: u64,

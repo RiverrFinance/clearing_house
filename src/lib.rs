@@ -3,11 +3,11 @@ use ic_cdk::{api::msg_caller, export_candid, init};
 
 // Import types needed for Candid generation
 use add_liquidity::add_liquidity_params::AddLiquidityToMarketParams;
-use close_position::{
-    close_position_params::ClosePositionParams, close_position_result::ClosePositionResult,
-};
+use close_position::close_position_params::ClosePositionParams;
+use close_position::close_position_result::ClosePositionResult;
 use deposit::deposit_params::DepositParams;
 use market::functions::open_position_in_market::OpenPositioninMarketResult;
+use market::market_details::LiquidityOperationResult;
 use market::market_details::MarketDetails;
 use open_position::open_position_params::OpenPositionParams;
 use remove_liquidity::remove_liquidity_params::RemoveLiquidityFromMarketParams;
@@ -53,14 +53,14 @@ pub use user::balance_utils::get_user_balance;
 
 use crate::{
     house_settings::HouseDetails,
-    stable_memory::{ADMIN, HOUSE_SETTINGS, XRC},
+    stable_memory::{ADMIN, HOUSE_SETTINGS}, //, XRC},
 };
 
 #[init]
-fn init(xrc_id: Principal, init_details: HouseDetails) {
+fn init(init_details: HouseDetails) {
     let admin = msg_caller();
     ADMIN.with_borrow_mut(|reference| reference.set(admin));
-    XRC.with_borrow_mut(|reference| reference.set(xrc_id));
+    //  XRC.with_borrow_mut(|reference| reference.set(xrc_id));
 
     HOUSE_SETTINGS.with_borrow_mut(|reference| reference.set(init_details));
 }

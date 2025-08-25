@@ -1,40 +1,27 @@
 use ic_cdk::api::time;
 
-use crate::constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL;
+// use crate::constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL;
 use crate::market::components::liquidity_manager::HouseLiquidityManager;
 use crate::market::market_details::MarketDetails;
-use crate::pricing_update_management::price_fetch::_fetch_price;
 use crate::utils::duration_in_seconds;
 
 impl MarketDetails {
-    pub async fn collect_borrowing_payment(&mut self) -> bool {
+    pub fn collect_borrowing_payment(&mut self) {
         let duration_in_secs =
             |last_time_updated: u64| -> u64 { duration_in_seconds(last_time_updated) };
 
-        self._collect_fees_after_duration(duration_in_secs).await
+        self._collect_borrowing_fees_after_duration(duration_in_secs)
     }
 
-    pub async fn _collect_fees_after_duration<F>(&mut self, duration_in_secs: F) -> bool
+    pub fn _collect_borrowing_fees_after_duration<F>(&mut self, duration_in_secs: F)
     where
         F: Fn(u64) -> u64,
     {
         let pricing_manager = (*self).pricing_manager;
 
-        let price_update =
-            pricing_manager.get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
+        let price = pricing_manager.get_price();
 
-        let price = match price_update {
-            Some(price) => price,
-            None => {
-                let Ok((price, decimal)) = _fetch_price(self.index_asset_pricing_details()).await
-                else {
-                    return false;
-                };
-
-                self._update_price(price, decimal)
-            }
-        };
-
+        //   if let Some(price) = price_update {
         let pool_value = self._house_value(price);
 
         let Self {
@@ -76,6 +63,9 @@ impl MarketDetails {
         *last_time_since_borrow_fees_collected = time();
         *current_borrow_fees_owed +=
             shorts_current_borrow_fee_payement + longs_current_borrow_fee_payment;
-        return true;
+
+        // } else {
+        //     return false;
+        // }
     }
 }

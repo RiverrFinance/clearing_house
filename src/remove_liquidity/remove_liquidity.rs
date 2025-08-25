@@ -5,20 +5,25 @@ use crate::{
     market::market_details::LiquidityOperationResult,
     pricing_update_management::{
         price_waiting_operation_arg_variants::PriceWaitingOperation,
-        price_waiting_operation_utils::put_price_waiting_operation,
+        price_waiting_operation_utils::{
+            is_within_price_update_interval, put_price_waiting_operation,
+        },
     },
     remove_liquidity::remove_liquidity_params::RemoveLiquidityFromMarketParams,
-    stable_memory::MARKETS,
+    stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME,
     user::balance_utils::{
-        get_user_market_liquidity_shares, update_user_balance, update_user_market_liquidity_shares,
+        get_user_market_liquidity_shares, set_user_market_liquidity_shares, update_user_balance,
     },
 };
 
 #[update]
-pub async fn remove_liquidity(market_index: u64, params: RemoveLiquidityFromMarketParams) {
+pub async fn remove_liquidity(
+    market_index: u64,
+    params: RemoveLiquidityFromMarketParams,
+) -> LiquidityOperationResult {
     let depositor = msg_caller();
 
-    let result = _remove_liquidity(market_index, depositor, params).await;
+    let result = _remove_liquidity(market_index, depositor, params);
 
     if let LiquidityOperationResult::Waiting = result {
         put_price_waiting_operation(
@@ -31,9 +36,11 @@ pub async fn remove_liquidity(market_index: u64, params: RemoveLiquidityFromMark
             true,
         );
     }
+
+    return result;
 }
 
-pub async fn _remove_liquidity(
+pub fn _remove_liquidity(
     market_index: u64,
     depositor: Principal,
     params: RemoveLiquidityFromMarketParams,
@@ -44,31 +51,27 @@ pub async fn _remove_liquidity(
         return LiquidityOperationResult::Failed;
     };
 
-    let mut market = MARKETS.with_borrow_mut(|reference| reference.get(market_index).unwrap());
+    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
+        let (mut market, last_time_updated) = reference.get(market_index).unwrap();
 
-    let result = market.remove_liquidity_from_market(params).await;
+        // check if price update interval is within the allowed interval
+        if is_within_price_update_interval(last_time_updated) == false {
+            return LiquidityOperationResult::Waiting;
+        }
 
-    if let LiquidityOperationResult::Settled { amount_out } = result {
-        update_user_market_liquidity_shares(depositor, market_index, params.amount_in, false);
+        let result = market.remove_liquidity_from_market(params);
 
-        // let markets_tokens_ledger = get_house_asset_ledger();
+        if let LiquidityOperationResult::Settled { amount_out } = result {
+            set_user_market_liquidity_shares(
+                depositor,
+                market_index,
+                user_shares_balance - params.amount_in,
+            );
 
-        update_user_balance(depositor, amount_out, true);
+            update_user_balance(depositor, amount_out, true);
 
-        // let tx_result = markets_tokens_ledger
-        //     ._send_out(amount_out, depositor, Some(market.token_identifier.clone()))
-        //     .await;
-
-        // if tx_result == false {
-        //     update_user_balance(depositor, params.amount, true);
-
-        //     return LiquidityOperationResult::Failed;
-        // }
-
-        MARKETS.with_borrow_mut(|reference| {
-            // update market
-            reference.set(market_index, &market);
-        })
-    }
-    return result;
+            reference.set(market_index, &(market, last_time_updated));
+        }
+        return result;
+    })
 }

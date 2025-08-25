@@ -4,7 +4,7 @@ use ic_cdk::update;
 use crate::market::{market_details::MarketDetails, query_utils::_get_market_timer_details};
 use crate::pricing_update_management::price_waiting_operation_arg_variants::PriceWaitingOperation;
 use crate::pricing_update_management::price_waiting_operation_utils::put_price_waiting_operation;
-use crate::stable_memory::{ADMIN, MARKETS};
+use crate::stable_memory::{ADMIN, MARKETS_WITH_LAST_PRICE_UPDATE_TIME};
 use crate::utils;
 
 fn admin_guard() -> Result<(), String> {
@@ -20,8 +20,8 @@ fn admin_guard() -> Result<(), String> {
 
 #[update(name = "addMarket", guard = "admin_guard")]
 pub fn add_market(details: MarketDetails) {
-    MARKETS.with_borrow_mut(|reference| {
-        reference.push(&details);
+    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
+        reference.push(&(details, 0));
     })
 }
 
@@ -30,16 +30,8 @@ pub fn set_admin(new_admin: Principal) {
     ADMIN.with_borrow_mut(|reference| reference.set(new_admin));
 }
 
-async fn collect_borrow_fees(market_index: u64) {
-    let last_time_updated = _get_market_timer_details(market_index);
-
-    let hours_since_last_updated = utils::duration_in_hours(last_time_updated);
-
-    if hours_since_last_updated >= 8 {
-        _collect_funding_fees(market_index)
-    };
-
-    let outcome = _collect_borrow_fees(market_index).await;
+fn collect_borrow_fees(market_index: u64) {
+    let outcome = _collect_borrow_fees(market_index);
 
     if outcome == false {
         put_price_waiting_operation(
@@ -50,22 +42,28 @@ async fn collect_borrow_fees(market_index: u64) {
     }
 }
 
-async fn _collect_borrow_fees(market_index: u64) -> bool {
-    let mut market = MARKETS.with_borrow(|reference| reference.get(market_index).unwrap());
+fn _collect_borrow_fees(market_index: u64) -> bool {
+    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
+        let (mut market, last_price_update_time) = reference.get(market_index).unwrap();
 
-    let outcome = market.collect_borrowing_payment().await;
+        let last_time_updated = _get_market_timer_details(market_index);
 
-    MARKETS.with_borrow_mut(|reference| reference.set(market_index, &market));
+        let hours_since_last_updated = utils::duration_in_hours(last_time_updated);
 
-    return outcome;
+        if hours_since_last_updated >= 8 {
+            _collect_funding_fees(&mut market)
+        };
+
+        market.collect_borrowing_payment();
+
+        reference.set(market_index, &(market, last_price_update_time));
+
+        return true;
+    })
 }
 
-fn _collect_funding_fees(market_index: u64) {
-    MARKETS.with_borrow_mut(|reference| {
-        let mut market = reference.get(market_index).unwrap();
+//
 
-        market.settle_funding_payment();
-
-        reference.set(market_index, &market)
-    })
+fn _collect_funding_fees(market: &mut MarketDetails) {
+    market.settle_funding_payment();
 }

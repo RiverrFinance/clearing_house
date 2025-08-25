@@ -3,50 +3,29 @@ use crate::market::components::liquidity_manager::HouseLiquidityManager;
 use crate::market::market_details::MarketDetails;
 
 use crate::market::components::bias::UpdateBiasDetailsParamters;
-
-use crate::constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL;
 use crate::math::math::Neg;
 use crate::position::position_details::PositionDetails;
-use crate::pricing_update_management::price_fetch::_fetch_price;
-
 impl MarketDetails {
-    pub async fn close_position_in_market(
+    pub fn close_position_in_market(
         &mut self,
         position: PositionDetails,
         acceptable_price_limit: u128,
     ) -> ClosePositionResult {
-        let price_update = self
-            .pricing_manager
-            .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
-        self._close_position_in_market_with_price_option(
-            position,
-            acceptable_price_limit,
-            price_update,
-        )
-        .await
+        let price = self.pricing_manager.get_price();
+
+        self._close_position_with_price_option(position, acceptable_price_limit, price)
     }
 
-    pub async fn _close_position_in_market_with_price_option(
+    pub fn _close_position_with_price_option(
         &mut self,
         position: PositionDetails,
         acceptable_price_limit: u128,
-        price_update: Option<u128>,
+        price: u128,
     ) -> ClosePositionResult {
         // self
         // .pricing_manager
         // .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
-        let price = match price_update {
-            Some(price) => price,
-            None => {
-                let Ok((price, decimal)) = _fetch_price(self.index_asset_pricing_details()).await
-                else {
-                    return ClosePositionResult::Failed;
-                };
-
-                self._update_price(price, decimal)
-            }
-        };
-
+        //  if let Some(price) = price_update {
         let PositionDetails { long, .. } = position;
         // if closing a short and price is higher than acceptable price
         // if closing long ,and price is lower than acceptable price
@@ -135,5 +114,8 @@ impl MarketDetails {
         ClosePositionResult::Settled {
             returns: collateral_out,
         }
+        // } else {
+        //     ClosePositionResult::Waiting
+        // }
     }
 }

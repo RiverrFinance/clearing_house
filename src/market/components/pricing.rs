@@ -1,5 +1,4 @@
 use candid::CandidType;
-use ic_cdk::api::time as now;
 use serde::{Deserialize, Serialize};
 
 use crate::math::math::{apply_exponent, apply_precision, diff};
@@ -10,28 +9,26 @@ type Time = u64;
 #[derive(Default, Deserialize, Copy, Clone, CandidType, Serialize)]
 pub struct PricingManager {
     pub price: u128,
-    pub last_fetched: Time,
     pub price_impact_exponent_factor: u128,
     pub positive_price_impact_factor: u128,
     pub negative_price_impact_factor: u128,
 }
 
 impl PricingManager {
-    pub fn get_price_within_interval(&self, interval: u64) -> Option<u128> {
-        if self.last_fetched + interval >= now() {
-            return Some(self.price);
-        } else {
-            return None;
-        }
-    }
-    #[cfg(test)]
-    pub fn get_price(&self) -> Option<u128> {
-        return Some(self.price);
+    // pub fn get_price_within_interval(&self, interval: u64) -> Option<u128> {
+    //     if self.last_fetched + interval >= now() {
+    //         return Some(self.price);
+    //     } else {
+    //         return None;
+    //     }
+    // }
+
+    pub fn get_price(&self) -> u128 {
+        self.price
     }
 
     pub fn update_price(&mut self, price: u128) {
         self.price = price;
-        self.last_fetched = now()
     }
     // Price impact is calculated as:
     //
