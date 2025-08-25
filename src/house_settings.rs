@@ -4,10 +4,9 @@ use candid::CandidType;
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    asset_management::{AssetLedger, AssetPricingDetails},
-    stable_memory::HOUSE_SETTINGS,
-};
+use crate::asset_management::AssetLedger;
+use crate::pricing_update_management::price_fetch::AssetPricingDetails;
+use crate::stable_memory::HOUSE_SETTINGS;
 
 #[derive(Serialize, Deserialize, CandidType, Clone)]
 pub struct HouseDetails {
@@ -29,7 +28,7 @@ pub fn get_markets_tokens_ledger() -> AssetLedger {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().markets_tokens_ledger)
 }
 
-pub fn get_asset_pricing_details() -> AssetPricingDetails {
+pub fn get_house_asset_pricing_details() -> AssetPricingDetails {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().house_asset_pricing_details.clone())
 }
 

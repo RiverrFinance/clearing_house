@@ -5,14 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use ic_stable_structures::storable::{Bound, Storable};
 
-use crate::{
-    asset_management::AssetPricingDetails,
-    market::components::{
-        bias::Bias, funding_manager::FundingManager, liquidity_manager::HouseLiquidityManager,
-        pricing::PricingManager,
-    },
-    math::math::to_precision,
-};
+use crate::market::components::bias::Bias;
+use crate::market::components::funding_manager::FundingManager;
+use crate::market::components::liquidity_manager::HouseLiquidityManager;
+use crate::market::components::pricing::PricingManager;
+use crate::math::math::to_precision;
+use crate::pricing_update_management::price_fetch::AssetPricingDetails;
 
 pub enum LiquidityOperationResult {
     Settled { amount_out: u128 },
@@ -41,13 +39,14 @@ pub struct MarketDetails {
 }
 
 impl MarketDetails {
-    pub fn _update_price(&mut self, price: u64, decimal: u32) {
+    pub fn _update_price(&mut self, price: u64, decimal: u32) -> u128 {
         let Self {
             pricing_manager, ..
         } = self;
 
         let price_to_precision = to_precision(price as u128, 10u128.pow(decimal));
         pricing_manager.update_price(price_to_precision);
+        price_to_precision
     }
 
     /// Calculates the current value of the

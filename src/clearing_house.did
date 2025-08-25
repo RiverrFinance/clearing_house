@@ -30,6 +30,12 @@ type ClosePositionResult = variant {
   Settled : record { returns : nat };
 };
 type DepositParams = record { block_index : opt nat64; amount : nat };
+type FailureReason = variant {
+  PriceLimitExceeded;
+  InsufficientBalance;
+  Other;
+  PriceFetcheFailed;
+};
 type FundingManager = record {
   threshold_stable_funding : nat;
   last_time_updated : nat64;
@@ -86,8 +92,7 @@ type OpenPositionParams = record {
   leverage_factor : nat;
 };
 type OpenPositioninMarketResult = variant {
-  Failed;
-  Waiting : record { params : OpenPositionParams };
+  Failed : record { reason : FailureReason };
   Settled : record { position : PositionDetails };
 };
 type PositionDetails = record {
@@ -111,10 +116,9 @@ type RemoveLiquidityFromMarketParams = record {
   min_amount_out : nat;
   amount_in : nat;
 };
-type Result = variant { Ok : nat; Err : text };
 type WithdrawParams = record { amount : nat };
 service : (principal, HouseDetails) -> {
-  addLiquidity : (nat64, AddLiquidityToMarketParams) -> (Result);
+  addLiquidity : (nat64, AddLiquidityToMarketParams) -> ();
   addMarket : (MarketDetails) -> ();
   closePosition : (ClosePositionParams) -> (ClosePositionResult);
   deposit : (DepositParams) -> ();

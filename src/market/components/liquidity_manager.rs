@@ -1,8 +1,8 @@
 use candid::CandidType;
 use serde::{Deserialize, Serialize};
 
-#[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq, Eq))]
-#[derive(Default, Deserialize, Serialize, CandidType)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[derive(Default, Deserialize, Copy, Clone, Serialize, CandidType)]
 pub struct HouseLiquidityManager {
     pub total_liquidity_tokens_minted: u128,
     /// Total Deposit

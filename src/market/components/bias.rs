@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::math::{Neg, apply_exponent, apply_precision, bound_signed, mul_div};
 
-#[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq, Eq))]
-#[derive(Default, Deserialize, Serialize, CandidType)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[derive(Default, Deserialize, Copy, Clone, Serialize, CandidType)]
 pub struct Bias {
     pub longs: BiasDetails,
     pub shorts: BiasDetails,
@@ -63,8 +63,8 @@ impl Bias {
     }
 }
 
-#[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq, Eq))]
-#[derive(Default, Serialize, Deserialize, CandidType)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+#[derive(Default, Deserialize, Copy, Clone, Serialize, CandidType)]
 pub struct BiasDetails {
     // Total amount in positions  in bias direction
     total_open_interest: u128,

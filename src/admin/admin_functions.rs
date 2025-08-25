@@ -30,7 +30,7 @@ pub fn set_admin(new_admin: Principal) {
     ADMIN.with_borrow_mut(|reference| reference.set(new_admin));
 }
 
-fn collect_borrow_fees(market_index: u64) {
+async fn collect_borrow_fees(market_index: u64) {
     let last_time_updated = _get_market_timer_details(market_index);
 
     let hours_since_last_updated = utils::duration_in_hours(last_time_updated);
@@ -39,7 +39,7 @@ fn collect_borrow_fees(market_index: u64) {
         _collect_funding_fees(market_index)
     };
 
-    let outcome = _collect_borrow_fees(market_index);
+    let outcome = _collect_borrow_fees(market_index).await;
 
     if outcome == false {
         put_price_waiting_operation(
@@ -50,16 +50,14 @@ fn collect_borrow_fees(market_index: u64) {
     }
 }
 
-fn _collect_borrow_fees(market_index: u64) -> bool {
-    MARKETS.with_borrow(|reference| {
-        let mut market = reference.get(market_index).unwrap();
+async fn _collect_borrow_fees(market_index: u64) -> bool {
+    let mut market = MARKETS.with_borrow(|reference| reference.get(market_index).unwrap());
 
-        let outcome = market.collect_borrowing_payment();
+    let outcome = market.collect_borrowing_payment().await;
 
-        reference.set(market_index, &market);
+    MARKETS.with_borrow_mut(|reference| reference.set(market_index, &market));
 
-        return outcome;
-    })
+    return outcome;
 }
 
 fn _collect_funding_fees(market_index: u64) {

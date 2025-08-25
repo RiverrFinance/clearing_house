@@ -1,6 +1,7 @@
 use crate::market::components::bias::UpdateBiasDetailsParamters;
 use crate::market::components::liquidity_manager::HouseLiquidityManager;
 use crate::market::market_details::{MarketDetails, MarketState};
+use crate::pricing_update_management::price_fetch::_fetch_price;
 use candid::{CandidType, Deserialize};
 
 use crate::constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL;
@@ -13,8 +14,17 @@ use crate::position::position_details::PositionDetails;
 pub enum OpenPositioninMarketResult {
     // Limit {acceptable_price:u128,position:Position},
     Settled { position: PositionDetails },
-    Waiting { params: OpenPositionParams },
-    Failed,
+    //Waiting { params: OpenPositionParams },
+    Failed { reason: FailureReason },
+}
+
+#[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq, Eq))]
+#[derive(CandidType, Deserialize)]
+pub enum FailureReason {
+    PriceLimitExceeded,
+    PriceFetcheFailed,
+    InsufficientBalance,
+    Other,
 }
 
 impl MarketDetails {
@@ -28,7 +38,7 @@ impl MarketDetails {
     /// Long - true for long
     /// MAX PNL - the ma reserve for formation
     /// ACCEPTABLE PRICE - the price limit for  
-    pub fn open_position_in_market(
+    pub async fn open_position_in_market(
         &mut self,
         params: OpenPositionParams,
     ) -> OpenPositioninMarketResult {
@@ -38,6 +48,7 @@ impl MarketDetails {
             .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
 
         self._open_position_in_market_with_price(params, price_update)
+            .await
     }
     ///
     /// Fail checks condition
@@ -56,7 +67,7 @@ impl MarketDetails {
     /// biases expereince chnage too
     /// debt increases total_open_interest_dynamic increases same as open interest;
     /// position  pre cummulative and pre cumm borrowing factor is zero  
-    pub fn _open_position_in_market_with_price(
+    pub async fn _open_position_in_market_with_price(
         &mut self,
         params: OpenPositionParams,
         price_update: Option<u128>,
@@ -70,111 +81,145 @@ impl MarketDetails {
             owner,
             ..
         } = params;
-        if let Some(price) = price_update {
-            if (long && price > acceptable_price_limit)
-                || ((!long) && price < acceptable_price_limit)
-            {
-                return OpenPositioninMarketResult::Failed;
-            }
 
-            let market_state = (*self).state;
+        //  let pricing_hook = async || -> Option<u128> { self._fetch_price(price_update).await };
 
-            let MarketState {
-                max_leverage_factor,
-                max_reserve_factor,
-                ..
-            } = market_state;
+        let market_state = (*self).state;
 
-            if leverage_factor > max_leverage_factor || reserve_factor > max_reserve_factor {
-                return OpenPositioninMarketResult::Failed;
+        let MarketState {
+            max_leverage_factor,
+            max_reserve_factor,
+            ..
+        } = market_state;
+
+        if leverage_factor > max_leverage_factor || reserve_factor > max_reserve_factor {
+            return OpenPositioninMarketResult::Failed {
+                reason: FailureReason::Other,
             };
+        };
 
-            let debt = apply_precision(leverage_factor, collateral) - collateral;
+        let debt = apply_precision(leverage_factor, collateral) - collateral;
 
-            let added_reserve = apply_precision(reserve_factor, collateral + debt); // 
+        let added_reserve = apply_precision(reserve_factor, collateral + debt); // 
 
-            let house_value = self._house_value(price);
+        let house_value_without_pnl = i128::max(0, self.liquidity_manager.static_value()) as u128;
 
-            let Self {
-                liquidity_manager,
-                bias_tracker,
-                ..
-            } = self;
+        let Self {
+            mut liquidity_manager,
+            mut bias_tracker,
+            ..
+        } = *self;
 
-            let HouseLiquidityManager {
-                free_liquidity,
+        let HouseLiquidityManager {
+            free_liquidity,
+            current_longs_reserve,
+            current_shorts_reserve,
+            current_net_debt,
+            shorts_max_reserve_factor,
+            longs_max_reserve_factor,
+            total_deposit,
+            ..
+        } = &mut liquidity_manager;
+
+        //self.calculate_reserve_in_for_opening_position(price, long, max_pnl);
+
+        let (max_reserve_for_bias, current_reserve_for_bias) = if long {
+            (
+                apply_precision(*longs_max_reserve_factor, house_value_without_pnl),
                 current_longs_reserve,
-                current_shorts_reserve,
-                current_net_debt,
-                shorts_max_reserve_factor,
-                longs_max_reserve_factor,
-                total_deposit,
-                ..
-            } = liquidity_manager;
-
-            //self.calculate_reserve_in_for_opening_position(price, long, max_pnl);
-
-            let (max_reserve_for_bias, current_reserve_for_bias) = if long {
-                (
-                    apply_precision(*longs_max_reserve_factor, house_value),
-                    current_longs_reserve,
-                )
-            } else {
-                (
-                    apply_precision(*shorts_max_reserve_factor, house_value),
-                    current_shorts_reserve,
-                )
-            };
-
-            if debt + added_reserve > *free_liquidity
-                || added_reserve + *current_reserve_for_bias > max_reserve_for_bias
-            {
-                return OpenPositioninMarketResult::Failed;
-            }
-            // reduce free liquidity
-            *free_liquidity = *free_liquidity - (added_reserve + debt);
-            // increase current debt
-            *current_net_debt += debt;
-            // increase current debt for bias
-            *current_reserve_for_bias += added_reserve;
-            // increase total deposit
-            *total_deposit += collateral;
-            let position_open_interest = debt + collateral;
-
-            let units = to_precision(position_open_interest, price);
-
-            let params = UpdateBiasDetailsParamters {
-                delta_net_debt_of_traders: debt as i128,
-                delta_total_open_interest: position_open_interest as i128,
-                delta_total_open_interest_dynamic: position_open_interest as i128,
-                delta_total_units: units as i128,
-                delta_net_reserve: added_reserve as i128,
-            };
-
-            bias_tracker.update_bias_details(params, long);
-
-            let current_cumulative_funding_factor =
-                self.get_cummulative_funding_factor_since_epoch(long);
-
-            let current_cummulative_borrowing_factor =
-                self.get_cummulative_borrowing_factor_since_epoch(long);
-
-            // let price_impact = self.calculate_price_impact_open_position(position_open_interest);
-
-            let position = PositionDetails {
-                owner,
-                collateral,
-                long,
-                debt,
-                max_reserve: added_reserve,
-                units,
-                pre_cummulative_funding_factor: current_cumulative_funding_factor,
-                pre_cummulative_borrowing_factor: current_cummulative_borrowing_factor,
-            };
-            OpenPositioninMarketResult::Settled { position }
+            )
         } else {
-            OpenPositioninMarketResult::Waiting { params }
+            (
+                apply_precision(*shorts_max_reserve_factor, house_value_without_pnl),
+                current_shorts_reserve,
+            )
+        };
+
+        if debt + added_reserve > *free_liquidity
+            || added_reserve + *current_reserve_for_bias > max_reserve_for_bias
+        {
+            return OpenPositioninMarketResult::Failed {
+                reason: FailureReason::Other,
+            };
         }
+        // @dev Price check is dropped last as its considered the most expensive check
+        let price = match price_update {
+            Some(price) => price,
+            None => {
+                let Ok((price, decimal)) = _fetch_price(self.index_asset_pricing_details()).await
+                else {
+                    return OpenPositioninMarketResult::Failed {
+                        reason: FailureReason::PriceFetcheFailed,
+                    };
+                };
+
+                self._update_price(price, decimal)
+            }
+        };
+
+        // if let Some(price) = price_update {
+        if (long && price > acceptable_price_limit) || ((!long) && price < acceptable_price_limit) {
+            return OpenPositioninMarketResult::Failed {
+                reason: FailureReason::PriceLimitExceeded,
+            };
+        }
+
+        // reduce free liquidity
+        *free_liquidity = *free_liquidity - (added_reserve + debt);
+        // increase current debt
+        *current_net_debt += debt;
+        // increase current debt for bias
+        *current_reserve_for_bias += added_reserve;
+        // increase total deposit
+        *total_deposit += collateral;
+        let position_open_interest = debt + collateral;
+
+        let units = to_precision(position_open_interest, price);
+
+        let params = UpdateBiasDetailsParamters {
+            delta_net_debt_of_traders: debt as i128,
+            delta_total_open_interest: position_open_interest as i128,
+            delta_total_open_interest_dynamic: position_open_interest as i128,
+            delta_total_units: units as i128,
+            delta_net_reserve: added_reserve as i128,
+        };
+
+        bias_tracker.update_bias_details(params, long);
+
+        let current_cumulative_funding_factor =
+            self.get_cummulative_funding_factor_since_epoch(long);
+
+        let current_cummulative_borrowing_factor =
+            self.get_cummulative_borrowing_factor_since_epoch(long);
+
+        self.liquidity_manager = liquidity_manager;
+        self.bias_tracker = bias_tracker;
+
+        // let price_impact = self.calculate_price_impact_open_position(position_open_interest);
+
+        let position = PositionDetails {
+            owner,
+            collateral,
+            long,
+            debt,
+            max_reserve: added_reserve,
+            units,
+            pre_cummulative_funding_factor: current_cumulative_funding_factor,
+            pre_cummulative_borrowing_factor: current_cummulative_borrowing_factor,
+        };
+        OpenPositioninMarketResult::Settled { position }
+        // } else {
+        //     let Ok((price, decimal)) = _fetch_price(self.index_asset_pricing_details()).await
+        //     else {
+        //         return OpenPositioninMarketResult::Failed;
+        //     };
+
+        //     self._update_price(price, decimal);
+
+        //     self.open_position_in_market(params).await
+
+        //     // OpenPositioninMarketResult::Waiting { params }
+        // }
     }
 
     // get the amount

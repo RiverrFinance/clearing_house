@@ -15,10 +15,10 @@ use crate::{
 };
 
 #[update]
-pub fn remove_liquidity(market_index: u64, params: RemoveLiquidityFromMarketParams) {
+pub async fn remove_liquidity(market_index: u64, params: RemoveLiquidityFromMarketParams) {
     let depositor = msg_caller();
 
-    let result = _remove_liquidity(market_index, depositor, params);
+    let result = _remove_liquidity(market_index, depositor, params).await;
 
     if let LiquidityOperationResult::Waiting = result {
         put_price_waiting_operation(
@@ -33,7 +33,7 @@ pub fn remove_liquidity(market_index: u64, params: RemoveLiquidityFromMarketPara
     }
 }
 
-pub fn _remove_liquidity(
+pub async fn _remove_liquidity(
     market_index: u64,
     depositor: Principal,
     params: RemoveLiquidityFromMarketParams,
@@ -44,13 +44,9 @@ pub fn _remove_liquidity(
         return LiquidityOperationResult::Failed;
     };
 
-    let (result, market) = MARKETS.with_borrow_mut(|reference| {
-        let mut market = reference.get(market_index).unwrap();
+    let mut market = MARKETS.with_borrow_mut(|reference| reference.get(market_index).unwrap());
 
-        let result = market.remove_liquidity_from_market(params);
-
-        (result, market)
-    });
+    let result = market.remove_liquidity_from_market(params).await;
 
     if let LiquidityOperationResult::Settled { amount_out } = result {
         update_user_market_liquidity_shares(depositor, market_index, params.amount_in, false);

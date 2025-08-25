@@ -15,7 +15,7 @@ use crate::user::balance_utils::{
 pub async fn add_liquidity(market_index: u64, params: AddLiquidityToMarketParams) {
     let depositor = msg_caller();
 
-    let result = _add_liquidity(market_index, depositor, params);
+    let result = _add_liquidity(market_index, depositor, params).await;
 
     if let LiquidityOperationResult::Waiting = result {
         put_price_waiting_operation(
@@ -30,7 +30,7 @@ pub async fn add_liquidity(market_index: u64, params: AddLiquidityToMarketParams
     }
 }
 
-pub fn _add_liquidity(
+pub async fn _add_liquidity(
     market_index: u64,
     depositor: Principal,
     params: AddLiquidityToMarketParams,
@@ -41,13 +41,9 @@ pub fn _add_liquidity(
         return LiquidityOperationResult::Failed;
     }
 
-    let (result, market) = MARKETS.with_borrow_mut(|reference| {
-        let mut market = reference.get(market_index).unwrap();
+    let mut market = MARKETS.with_borrow_mut(|reference| reference.get(market_index).unwrap());
 
-        let result = market.add_liquidity_to_market(params);
-
-        (result, market)
-    });
+    let result = market.add_liquidity_to_market(params).await;
 
     if let LiquidityOperationResult::Settled { amount_out } = result {
         set_user_balance(depositor, user_balance - params.amount);
