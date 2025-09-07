@@ -21,6 +21,7 @@ impl MarketDetails {
         let RemoveLiquidityFromMarketParams {
             amount_in,
             min_amount_out,
+            ..
         } = params;
         //
         let house_value = self._house_value(price);

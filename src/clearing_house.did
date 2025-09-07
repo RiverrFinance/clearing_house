@@ -5,7 +5,7 @@ type AssetLedger = record {
   ledger_type : AssetLedgerType;
   asset_decimals : nat32;
 };
-type AssetLedgerType = variant { ICP; ICRC; RASSET };
+type AssetLedgerType = variant { ICP; ICRC };
 type AssetPricingDetails = record { class : AssetClass; symbol : text };
 type Bias = record { shorts : BiasDetails; longs : BiasDetails };
 type BiasDetails = record {
@@ -29,13 +29,20 @@ type ClosePositionResult = variant {
   Waiting;
   Settled : record { returns : nat };
 };
-type DepositParams = record { block_index : opt nat64; amount : nat };
-type FailureReason = variant {
-  PriceLimitExceeded;
-  InsufficientBalance;
-  Other;
-  PriceFetcheFailed;
+type CreateMarketParams = record {
+  shorts_borrowing_exponent_factor : nat;
+  longs_base_borrowing_factor : nat;
+  init_state : MarketState;
+  funding_exponent_factor : nat;
+  longs_borrowing_exponent_factor : nat;
+  shorts_base_borrowing_factor : nat;
+  asset_pricing_details : AssetPricingDetails;
+  shorts_max_reserve_factor : nat;
+  funding_factor : nat;
+  longs_max_reserve_factor : nat;
 };
+type DepositParams = record { block_index : opt nat64; amount : nat };
+type FailureReason = variant { PriceLimitExceeded; InsufficientBalance; Other };
 type FundingManager = record {
   threshold_stable_funding : nat;
   last_time_updated : nat64;
@@ -76,7 +83,6 @@ type MarketDetails = record {
   bias_tracker : Bias;
   state : MarketState;
   pricing_manager : PricingManager;
-  token_identifier : text;
   funding_manager : FundingManager;
   index_asset_pricing_details : AssetPricingDetails;
   liquidity_manager : HouseLiquidityManager;
@@ -97,6 +103,7 @@ type OpenPositionParams = record {
 };
 type OpenPositioninMarketResult = variant {
   Failed : record { reason : FailureReason };
+  Waiting : record { params : OpenPositionParams };
   Settled : record { position : PositionDetails };
 };
 type PositionDetails = record {
@@ -113,7 +120,6 @@ type PricingManager = record {
   negative_price_impact_factor : nat;
   price_impact_exponent_factor : nat;
   positive_price_impact_factor : nat;
-  last_fetched : nat64;
   price : nat;
 };
 type RemoveLiquidityFromMarketParams = record {
@@ -125,15 +131,17 @@ service : (HouseDetails) -> {
   addLiquidity : (nat64, AddLiquidityToMarketParams) -> (
       LiquidityOperationResult,
     );
-  addMarket : (MarketDetails) -> ();
+  add_market : (CreateMarketParams, AssetPricingDetails, MarketState) -> ();
   closePosition : (ClosePositionParams) -> (ClosePositionResult);
-  deposit : (DepositParams) -> ();
-  get_market_details : (nat64) -> (opt MarketDetails) query;
+  deposit : (DepositParams) -> (bool);
+  getUserBalance : (principal) -> (nat) query;
+  getUserMarketLiquidityShares : (principal, nat64) -> (nat) query;
+  get_market_details : (nat64) -> (MarketDetails) query;
   get_markets_count : () -> (nat64) query;
-  get_user_balance : (principal) -> (nat) query;
-  get_user_market_liquidity_shares : (principal, nat64) -> (nat) query;
-  open_position : (OpenPositionParams) -> (OpenPositioninMarketResult);
-  remove_liquidity : (nat64, RemoveLiquidityFromMarketParams) -> ();
+  openPosition : (OpenPositionParams) -> (OpenPositioninMarketResult);
+  removeLiquidity : (nat64, RemoveLiquidityFromMarketParams) -> (
+      LiquidityOperationResult,
+    );
   setAdmin : (principal) -> ();
-  withdraw : (WithdrawParams) -> ();
+  withdraw : (WithdrawParams) -> (bool);
 }

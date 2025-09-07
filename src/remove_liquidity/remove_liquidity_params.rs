@@ -1,33 +1,41 @@
-use candid::CandidType;
+use candid::{CandidType, Principal};
 use serde::Deserialize;
 
-use crate::pricing_update_management::price_waiting_operation_arg_variants::MarketLiquidityOperationParams;
+use crate::{
+    pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation,
+    remove_liquidity::remove_liquidity::_remove_liquidity,
+};
 
+/// Parameters for removing liquidity from a market.
+///
+/// This struct contains all the necessary information to remove liquidity shares from a
+/// specific market in the clearing house. The owner must be the message caller to ensure security.
 #[derive(CandidType, Deserialize, Copy, Clone)]
 pub struct RemoveLiquidityFromMarketParams {
+    /// The unique identifier of the target market to remove liquidity from.
+    /// Must correspond to an existing market in the clearing house.
+    pub market_index: u64,
+
+    /// The principal ID of the liquidity provider.
+    /// **IMPORTANT**: This must match the message caller (`msg_caller()`) for security.
+    /// The function will fail if this doesn't match the actual caller.
+    pub owner: Principal,
+
+    /// The amount of liquidity shares to remove from the market.
+    /// This should be specified with 20 decimal places precision (e.g., 1000000000000000000000 for 0.1 units).
+    /// The user must have sufficient liquidity shares in the specified market.
     pub amount_in: u128,
+
+    /// The minimum amount of assets expected in return.
+    /// This should be specified with 20 decimal places precision (e.g., 950000000000000000000 for 0.095 units).
+    /// This provides slippage protection - if the actual assets received would be
+    /// less than this amount, the transaction will fail.
+    /// Should be calculated based on current market conditions and acceptable slippage.
     pub min_amount_out: u128,
 }
 
-impl Into<MarketLiquidityOperationParams> for RemoveLiquidityFromMarketParams {
-    fn into(self) -> MarketLiquidityOperationParams {
-        let Self {
-            amount_in,
-            min_amount_out,
-        } = self;
-
-        MarketLiquidityOperationParams {
-            amount_in,
-            min_amount_out,
-        }
-    }
-}
-
-impl From<MarketLiquidityOperationParams> for RemoveLiquidityFromMarketParams {
-    fn from(params: MarketLiquidityOperationParams) -> Self {
-        Self {
-            amount_in: params.amount_in,
-            min_amount_out: params.min_amount_out,
-        }
+impl PriceWaitingOperation for RemoveLiquidityFromMarketParams {
+    fn execute(&self) {
+        _remove_liquidity(self);
     }
 }

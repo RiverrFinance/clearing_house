@@ -1,5 +1,11 @@
+use crate::stable_memory::{ADMIN, HOUSE_SETTINGS};
 use candid::Principal;
 use ic_cdk::{api::msg_caller, export_candid, init};
+
+use crate::admin::admin_functions::CreateMarketParams;
+use crate::house_settings::HouseDetails;
+use crate::market::market_details::MarketState;
+use crate::pricing_update_management::price_fetch::AssetPricingDetails;
 
 // Import types needed for Candid generation
 use add_liquidity::add_liquidity_params::AddLiquidityToMarketParams;
@@ -41,26 +47,20 @@ pub mod withdraw;
 pub use add_liquidity::add_liquidity::add_liquidity;
 pub use admin::admin_functions::add_market;
 pub use close_position::close_position::close_position;
-pub use deposit::deposit::deposit;
+pub use deposit::deposit::deposit_into_account;
 pub use open_position::open_position::open_position;
 pub use remove_liquidity::remove_liquidity::remove_liquidity;
-pub use withdraw::withdraw::withdraw;
+pub use withdraw::withdraw::withdraw_from_account;
 
 // Query functions
 
 pub use market::query_utils::{get_market_details, get_markets_count};
 pub use user::balance_utils::get_user_balance;
 
-use crate::{
-    house_settings::HouseDetails,
-    stable_memory::{ADMIN, HOUSE_SETTINGS}, //, XRC},
-};
-
 #[init]
 fn init(init_details: HouseDetails) {
     let admin = msg_caller();
     ADMIN.with_borrow_mut(|reference| reference.set(admin));
-    //  XRC.with_borrow_mut(|reference| reference.set(xrc_id));
 
     HOUSE_SETTINGS.with_borrow_mut(|reference| reference.set(init_details));
 }

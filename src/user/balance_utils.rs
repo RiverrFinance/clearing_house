@@ -2,12 +2,12 @@ use crate::stable_memory::{USER_MARKET_LIQUIDTY_SHARES_BALANCES, USERS_BALANCES}
 use candid::Principal;
 use ic_cdk::query;
 
-#[query]
+#[query(name = "getUserBalance")]
 pub fn get_user_balance(user: Principal) -> u128 {
     USERS_BALANCES.with_borrow(|reference| reference.get(&user).unwrap_or_default())
 }
 
-#[query]
+#[query(name = "getUserMarketLiquidityShares")]
 pub fn get_user_market_liquidity_shares(user: Principal, market_index: u64) -> u128 {
     USER_MARKET_LIQUIDTY_SHARES_BALANCES
         .with_borrow(|reference| reference.get(&(user, market_index)).unwrap_or_default())

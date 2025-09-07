@@ -29,9 +29,9 @@ pub struct MarketState {
 
 #[cfg_attr(test, derive(Debug, Clone, PartialEq, Eq))]
 #[derive(Default, Deserialize, Serialize, CandidType)]
+
 pub struct MarketDetails {
     pub index_asset_pricing_details: AssetPricingDetails,
-    pub token_identifier: String,
     pub bias_tracker: Bias,
     pub funding_manager: FundingManager,
     pub pricing_manager: PricingManager,
@@ -140,5 +140,8 @@ impl Storable for MarketDetails {
     }
 
     /// The size bounds of the type.
-    const BOUND: Bound = Bound::Unbounded;
+    const BOUND: Bound = Bound::Bounded {
+        max_size: 800,
+        is_fixed_size: false,
+    };
 }

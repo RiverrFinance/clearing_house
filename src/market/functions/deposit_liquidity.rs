@@ -24,6 +24,7 @@ impl MarketDetails {
         let AddLiquidityToMarketParams {
             amount,
             min_amount_out,
+            ..
         } = params;
 
         let house_value = self._house_value(price);

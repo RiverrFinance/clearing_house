@@ -14,7 +14,8 @@ dfx stop
 
 ```sh
 
-export ASSET_SYMBOL=USD
-dfx deploy clearing_house --argument "(record { house_asset_ledger = record {ledger_id = principal \"${XRC_ID}\";
-ledger_type = variant {ICRC} ;asset_decimals = 6};house_asset_pricing_details = record {class = variant {Cryptocurrency};symbol = \"${ASSET_SYMBOL}\"};execution_fee = 0})"
+export ASSET_SYMBOL=USDT
+export LEDGER_ID=4yl7m-3qaaa-aaaaf-qanlq-cai
+dfx deploy clearing_house --argument "(record { house_asset_ledger = record {ledger_id = principal \"${LEDGER_ID}\";
+ledger_type = variant {ICRC} ;asset_decimals = 6};house_asset_pricing_details = record {class = variant {Cryptocurrency};symbol = \"${ASSET_SYMBOL}\"};execution_fee = 0})" --network ic
 ```

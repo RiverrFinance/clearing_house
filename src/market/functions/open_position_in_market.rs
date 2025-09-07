@@ -12,7 +12,7 @@ use crate::position::position_details::PositionDetails;
 pub enum OpenPositioninMarketResult {
     // Limit {acceptable_price:u128,position:Position},
     Settled { position: PositionDetails },
-    Waiting { params: OpenPositionParams },
+    Waiting,
     Failed { reason: FailureReason },
 }
 

@@ -6,3 +6,5 @@
 /// the admin can manually initiate the collection of borrow fees by calling the collectBorrowFees function
 /// this also in turn collects the fundingfees
 pub mod admin_functions;
+
+pub mod roles;

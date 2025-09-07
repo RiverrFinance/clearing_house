@@ -13,19 +13,50 @@ pub struct HouseDetails {
     pub house_asset_ledger: AssetLedger,
     pub house_asset_pricing_details: AssetPricingDetails,
     pub execution_fee: u128,
+    pub position_fees_acccumulated: u128,
 }
 
-pub fn get_house_asset_ledger() -> AssetLedger {
-    HOUSE_SETTINGS.with_borrow(|reference| reference.get().house_asset_ledger)
+pub fn get_position_fees_acccumulated() -> u128 {
+    HOUSE_SETTINGS.with_borrow(|reference| reference.get().position_fees_acccumulated)
+}
+
+pub fn update_position_fees_acccumulated(amount: u128, add: bool) {
+    HOUSE_SETTINGS.with_borrow_mut(|reference| {
+        let mut position_fees_acccumulated = reference.get().position_fees_acccumulated;
+        if add {
+            position_fees_acccumulated += amount;
+        } else {
+            position_fees_acccumulated -= amount;
+        }
+        reference.set(HouseDetails {
+            position_fees_acccumulated,
+            ..reference.get().clone()
+        });
+    });
 }
 
 pub fn get_execution_fee() -> u128 {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().execution_fee)
 }
 
-// pub fn get_markets_tokens_ledger() -> AssetLedger {
-//     HOUSE_SETTINGS.with_borrow(|reference| reference.get().markets_tokens_ledger)
-// }
+pub fn update_execution_fee(amount: u128, add: bool) {
+    HOUSE_SETTINGS.with_borrow_mut(|reference| {
+        let mut execution_fee = reference.get().execution_fee;
+        if add {
+            execution_fee += amount;
+        } else {
+            execution_fee -= amount;
+        }
+        reference.set(HouseDetails {
+            execution_fee,
+            ..reference.get().clone()
+        });
+    });
+}
+
+pub fn get_house_asset_ledger() -> AssetLedger {
+    HOUSE_SETTINGS.with_borrow(|reference| reference.get().house_asset_ledger)
+}
 
 pub fn get_house_asset_pricing_details() -> AssetPricingDetails {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().house_asset_pricing_details.clone())
@@ -34,7 +65,7 @@ pub fn get_house_asset_pricing_details() -> AssetPricingDetails {
 impl Default for HouseDetails {
     fn default() -> Self {
         Self {
-            // markets_tokens_ledger: AssetLedger::default(),
+            position_fees_acccumulated: 0,
             house_asset_pricing_details: AssetPricingDetails::default(),
             execution_fee: 0,
             house_asset_ledger: AssetLedger::default(),

@@ -1,13 +1,10 @@
-use candid::Principal;
 use ic_cdk::{api::msg_caller, update};
 
 use crate::{
+    constants::REMOVE_LIQUIDITY_PRIORITY_INDEX,
     market::market_details::LiquidityOperationResult,
-    pricing_update_management::{
-        price_waiting_operation_arg_variants::PriceWaitingOperation,
-        price_waiting_operation_utils::{
-            is_within_price_update_interval, put_price_waiting_operation,
-        },
+    pricing_update_management::price_waiting_operation_utils::{
+        is_within_price_update_interval, put_price_waiting_operation,
     },
     remove_liquidity::remove_liquidity_params::RemoveLiquidityFromMarketParams,
     stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME,
@@ -16,38 +13,126 @@ use crate::{
     },
 };
 
-#[update]
-pub async fn remove_liquidity(
-    market_index: u64,
-    params: RemoveLiquidityFromMarketParams,
-) -> LiquidityOperationResult {
-    let depositor = msg_caller();
+/// Removes liquidity from a specific market in the clearing house.
+///
+/// This function allows users to withdraw their liquidity shares from a market's
+/// liquidity pool, receiving the underlying assets in return. The operation may be
+/// executed immediately if price data is current, or queued for later execution if
+/// price updates are needed.
+///
+/// # Parameters
+///
+/// * `params` - [`RemoveLiquidityFromMarketParams`] containing:
+///   - `market_index` (u64): The unique identifier of the target market
+///   - `owner` (Principal): The principal ID of the liquidity provider
+///   - `amount_in` (u128): The amount of liquidity shares to remove (with 20 decimal places precision)
+///   - `min_amount_out` (u128): Minimum assets expected in return (slippage protection, with 20 decimal places precision)
+///
+/// # Returns
+///
+/// Returns [`LiquidityOperationResult`] which can be:
+/// - `Settled { amount_out }`: Successfully removed liquidity, returns actual assets received
+/// - `Waiting`: Operation queued due to stale price data, will execute when price updates
+/// - `Failed`: Operation failed due to insufficient shares or invalid parameters
+///
+/// # Security Notes
+///
+/// - **Caller Verification**: The `owner` parameter must match the message caller (`msg_caller()`)
+///   to prevent unauthorized liquidity removal
+/// - **Share Balance Check**: User must have sufficient liquidity shares in the specified market
+/// - **Balance Update**: Received assets are added to the user's balance upon successful removal
+///
+/// # Price Update Handling
+///
+/// If the market's price data is stale (beyond the allowed update interval), the operation
+/// is queued as a price waiting operation and will be executed automatically when fresh
+/// price data becomes available.
+///
+/// # Example Usage
+///
+/// ```rust
+/// let params = RemoveLiquidityFromMarketParams {
+///     market_index: 0,
+///     owner: msg_caller(),
+///     amount_in: 1000000000000000000000, // 0.1 units of liquidity shares with 20 decimal places
+///     min_amount_out: 950000000000000000000, // 0.095 units minimum assets with 5% slippage tolerance
+/// };
+///
+/// let result = remove_liquidity(params).await;
+/// match result {
+///     LiquidityOperationResult::Settled { amount_out } => {
+///         // Successfully removed liquidity, received `amount_out` assets
+///     },
+///     LiquidityOperationResult::Waiting => {
+///         // Operation queued, will execute when price updates
+///     },
+///     LiquidityOperationResult::Failed => {
+///         // Operation failed, check liquidity shares and parameters
+///     }
+/// }
+/// ```
+#[update(name = "removeLiquidity")]
+pub async fn remove_liquidity(params: RemoveLiquidityFromMarketParams) -> LiquidityOperationResult {
+    let owner = msg_caller();
 
-    let result = _remove_liquidity(market_index, depositor, params);
+    assert!(
+        owner == params.owner,
+        "Caller is not the owner of the liquidity"
+    );
+
+    let result = _remove_liquidity(&params);
 
     if let LiquidityOperationResult::Waiting = result {
         put_price_waiting_operation(
-            market_index,
-            PriceWaitingOperation::MarketLiquidityOp {
-                depositor,
-                adding: false,
-                params: params.into(),
-            },
-            true,
+            params.market_index,
+            REMOVE_LIQUIDITY_PRIORITY_INDEX,
+            Box::new(params),
         );
     }
 
     return result;
 }
 
-pub fn _remove_liquidity(
-    market_index: u64,
-    depositor: Principal,
-    params: RemoveLiquidityFromMarketParams,
-) -> LiquidityOperationResult {
-    let user_shares_balance = get_user_market_liquidity_shares(depositor, market_index);
+/// Internal implementation of the remove liquidity functionality.
+///
+/// This function performs the core logic for removing liquidity from a market, including:
+/// - Liquidity share balance verification
+/// - Price freshness validation
+/// - Market state updates
+/// - Asset distribution and balance updates
+///
+/// # Parameters
+///
+/// * `params` - Reference to [`RemoveLiquidityFromMarketParams`] containing the operation details
+///
+/// # Returns
+///
+/// Returns [`LiquidityOperationResult`] indicating the outcome of the operation.
+///
+/// # Implementation Details
+///
+/// The function:
+/// 1. Validates user has sufficient liquidity shares in the specified market
+/// 2. Checks if market price data is current
+/// 3. If price is stale, returns `Waiting` to queue the operation
+/// 4. If price is current, executes the liquidity removal
+/// 5. Updates user liquidity shares and balance on success
+///
+/// # Note
+///
+/// This is an internal function. External callers should use the public `remove_liquidity` function
+/// which includes proper caller verification and price waiting operation handling.
+pub fn _remove_liquidity(params: &RemoveLiquidityFromMarketParams) -> LiquidityOperationResult {
+    let RemoveLiquidityFromMarketParams {
+        amount_in,
+        market_index,
+        owner,
+        ..
+    } = *params;
 
-    if user_shares_balance < params.amount_in {
+    let user_shares_balance = get_user_market_liquidity_shares(owner, market_index);
+
+    if user_shares_balance < amount_in {
         return LiquidityOperationResult::Failed;
     };
 
@@ -59,16 +144,12 @@ pub fn _remove_liquidity(
             return LiquidityOperationResult::Waiting;
         }
 
-        let result = market.remove_liquidity_from_market(params);
+        let result = market.remove_liquidity_from_market(*params);
 
         if let LiquidityOperationResult::Settled { amount_out } = result {
-            set_user_market_liquidity_shares(
-                depositor,
-                market_index,
-                user_shares_balance - params.amount_in,
-            );
+            set_user_market_liquidity_shares(owner, market_index, user_shares_balance - amount_in);
 
-            update_user_balance(depositor, amount_out, true);
+            update_user_balance(owner, amount_out, true);
 
             reference.set(market_index, &(market, last_time_updated));
         }

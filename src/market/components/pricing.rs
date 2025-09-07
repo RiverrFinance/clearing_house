@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::math::{apply_exponent, apply_precision, diff};
 
-type Time = u64;
-
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[derive(Default, Deserialize, Copy, Clone, CandidType, Serialize)]
 pub struct PricingManager {

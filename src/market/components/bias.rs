@@ -67,7 +67,7 @@ impl Bias {
 #[derive(Default, Deserialize, Copy, Clone, Serialize, CandidType)]
 pub struct BiasDetails {
     // Total amount in positions  in bias direction
-    total_open_interest: u128,
+    pub total_open_interest: u128,
 
     /// Total Open Interest Dynamic
     ///
@@ -76,34 +76,34 @@ pub struct BiasDetails {
     /// the value would always reduce for borrowing factor update
     /// the value would increase for a positive funding factor  and reduce for a negative funding factor update
     /// bpunded below by net debt
-    total_open_interest_dynamic: i128,
+    pub total_open_interest_dynamic: i128,
 
     // Total amount in tokens or units bought for longs  or sold for shorts
-    total_units: u128,
+    pub total_units: u128,
     /// Total Reserve
     ///
     // Total amounts in position backed by pool, amount needed to ensure
     // also the sum of the maximum profit for all positions currently opened
-    total_reserve: u128,
+    pub total_reserve: u128,
     /// The total debt by traders
     ///
     /// tracks the debt in taking levarage @dev different from net debt of tokens dynamic
-    total_debt_of_traders: u128,
+    pub total_debt_of_traders: u128,
 
     /// the next borrowing fundig factor to be paid
-    current_borrowing_factor: u128,
+    pub current_borrowing_factor: u128,
 
     /// Cummulative fuding factor since epoch
     ///
-    cummulative_funding_factor_since_epoch: i128,
+    pub cummulative_funding_factor_since_epoch: i128,
     /// Cummulative fuding factor since epoch
     ///
-    cummulative_borrowing_factor_since_epoch: u128,
+    pub cummulative_borrowing_factor_since_epoch: u128,
     /// Borrowing exponent factor
     ///
     /// Configurable parameter utilized for calculating borrowing factor
-    borrowing_exponent_factor_: u128,
-    base_borrowing_factor: u128,
+    pub borrowing_exponent_factor_: u128,
+    pub base_borrowing_factor: u128,
 }
 
 impl BiasDetails {
