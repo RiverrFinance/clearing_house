@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use crate::constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL;
 use crate::pricing_update_management::price_fetch::update_price;
-use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation;
+use crate::pricing_update_management::price_waiting_operation_trait::{
+    PriceWaitingOperation, PriceWaitingOperationTrait,
+};
 use crate::stable_memory::MARKET_PRICE_WAITING_OPERATION;
 
 use ic_cdk::api::time;
@@ -17,7 +19,7 @@ pub fn is_within_price_update_interval(last_price_update_time: u64) -> bool {
 pub fn put_price_waiting_operation(
     market_index: u64,
     operation_priority_index: u8,
-    operation: Box<dyn PriceWaitingOperation>,
+    operation: PriceWaitingOperation,
 ) {
     let new_timer = ic_cdk_timers::set_timer(Duration::from_millis(500), move || {
         ic_cdk::futures::spawn(async move {
