@@ -53,14 +53,14 @@ impl AssetLedger {
             ledger_id,
             asset_decimals: decimals,
             ledger_type: asset_type,
-        } = self;
-        let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
+        } = *self;
+        let factored_amout = apply_precision(amount, 10u128.pow(decimals));
 
         match asset_type {
             AssetLedgerType::ICRC => {
                 let result = send_asset_in_asset_icrc(
                     factored_amout,
-                    *ledger_id,
+                    ledger_id,
                     Account {
                         owner: from,
                         subaccount: None,
@@ -76,8 +76,7 @@ impl AssetLedger {
             }
             AssetLedgerType::ICP => {
                 let tx_result =
-                    _verify_deposit_in(from, factored_amout, *ledger_id, block_index.unwrap())
-                        .await;
+                    _verify_deposit_in(from, factored_amout, ledger_id, block_index.unwrap()).await;
                 return tx_result;
             }
         }
@@ -88,14 +87,14 @@ impl AssetLedger {
             ledger_id,
             asset_decimals: decimals,
             ledger_type: asset_type,
-        } = self;
-        let factored_amout = apply_precision(amount, 10u128.pow(*decimals));
+        } = *self;
+        let factored_amout = apply_precision(amount, 10u128.pow(decimals));
 
         match asset_type {
             AssetLedgerType::ICP => {
                 let tx_result = send_asset_out_icp(
                     factored_amout,
-                    *ledger_id,
+                    ledger_id,
                     None,
                     Account {
                         owner: to,
@@ -109,7 +108,7 @@ impl AssetLedger {
             AssetLedgerType::ICRC => {
                 let tx_result = send_asset_out_icrc(
                     factored_amout,
-                    *ledger_id,
+                    ledger_id,
                     None,
                     Account {
                         owner: to,

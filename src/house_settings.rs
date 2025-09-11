@@ -13,11 +13,20 @@ pub struct HouseDetails {
     pub house_asset_ledger: AssetLedger,
     pub house_asset_pricing_details: AssetPricingDetails,
     pub execution_fee: u128,
+    pub execution_fees_accumulated: u128,
     pub position_fees_acccumulated: u128,
 }
 
 pub fn get_position_fees_acccumulated() -> u128 {
     HOUSE_SETTINGS.with_borrow(|reference| reference.get().position_fees_acccumulated)
+}
+
+pub fn get_execution_fee() -> u128 {
+    HOUSE_SETTINGS.with_borrow(|reference| reference.get().execution_fee)
+}
+
+pub fn get_execution_fees_accumulated() -> u128 {
+    HOUSE_SETTINGS.with_borrow(|reference| reference.get().execution_fees_accumulated)
 }
 
 pub fn update_position_fees_acccumulated(amount: u128, add: bool) {
@@ -35,20 +44,16 @@ pub fn update_position_fees_acccumulated(amount: u128, add: bool) {
     });
 }
 
-pub fn get_execution_fee() -> u128 {
-    HOUSE_SETTINGS.with_borrow(|reference| reference.get().execution_fee)
-}
-
-pub fn update_execution_fee(amount: u128, add: bool) {
+pub fn update_execution_fees_accumulated(amount: u128, add: bool) {
     HOUSE_SETTINGS.with_borrow_mut(|reference| {
-        let mut execution_fee = reference.get().execution_fee;
+        let mut execution_fees_accumulated = reference.get().execution_fees_accumulated;
         if add {
-            execution_fee += amount;
+            execution_fees_accumulated += amount;
         } else {
-            execution_fee -= amount;
+            execution_fees_accumulated -= amount;
         }
         reference.set(HouseDetails {
-            execution_fee,
+            execution_fees_accumulated,
             ..reference.get().clone()
         });
     });
@@ -68,6 +73,7 @@ impl Default for HouseDetails {
             position_fees_acccumulated: 0,
             house_asset_pricing_details: AssetPricingDetails::default(),
             execution_fee: 0,
+            execution_fees_accumulated: 0,
             house_asset_ledger: AssetLedger::default(),
         }
     }

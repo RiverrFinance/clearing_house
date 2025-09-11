@@ -50,7 +50,7 @@ thread_local! {
       })));
 
 
-    pub  static MARKET_PRICE_WAITING_OPERATION:RefCell<HashMap<u64,(TimerId,HashMap<u8,Vec<Box<dyn PriceWaitingOperation> >>)>> = RefCell::new(HashMap::new());
+    pub  static MARKET_PRICE_WAITING_OPERATION:RefCell<HashMap<u64,(TimerId,HashMap<u8,Vec< PriceWaitingOperation> >)>> = RefCell::new(HashMap::new());
     pub static MARKET_SHARE_USER_BALANCES:RefCell<HashMap<(Principal,u64),u128>> = RefCell::new(HashMap::new());
 
 
