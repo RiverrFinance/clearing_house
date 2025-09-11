@@ -1,10 +1,11 @@
 use ic_cdk::{api::msg_caller, update};
 
-use crate::add_liquidity::add_liquidity_params::AddLiquidityToMarketParams;
+use crate::add_liquidity::add_liquidity_params::AddLiquidityParams;
 use crate::constants::ADD_LIQUIDITY_PRIORITY_INDEX;
-use crate::house_settings::get_execution_fee;
+use crate::house_settings::{get_execution_fee, update_execution_fees_accumulated};
 use crate::market::market_details::LiquidityOperationResult;
 
+use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation;
 use crate::pricing_update_management::price_waiting_operation_utils::{
     is_within_price_update_interval, put_price_waiting_operation,
 };
@@ -24,8 +25,8 @@ use crate::user::balance_utils::{
 /// * `params` - [`AddLiquidityToMarketParams`] containing:
 ///   - `market_index` (u64): The unique identifier of the target market
 ///   - `depositor` (Principal): The principal ID of the user adding liquidity
-///   - `amount` (u128): The amount of base asset to deposit (with 20 decimal places precision)
-///   - `min_amount_out` (u128): Minimum liquidity shares expected in return (slippage protection)
+///   - `amount` (u128): Quote asset amount to deposit (20-decimal precision)
+///   - `min_amount_out` (u128): Minimum market shares expected in return (slippage protection; shares are distinct from quote asset and use 20-decimal precision)
 ///
 /// # Returns
 ///
@@ -47,6 +48,11 @@ use crate::user::balance_utils::{
 /// If the market's price data is stale (beyond the allowed update interval), the operation
 /// is queued as a price waiting operation and will be executed automatically when fresh
 /// price data becomes available.
+///
+/// # Units
+///
+/// - `amount` is in quote asset units (20-decimal precision)
+/// - `min_amount_out` is in market share units (20-decimal precision)
 ///
 /// # Example Usage
 ///
@@ -72,7 +78,7 @@ use crate::user::balance_utils::{
 /// }
 /// ```
 #[update(name = "addLiquidity")]
-pub fn add_liquidity(params: AddLiquidityToMarketParams) -> LiquidityOperationResult {
+pub fn add_liquidity(params: AddLiquidityParams) -> LiquidityOperationResult {
     let depositor = msg_caller();
 
     assert!(depositor == params.depositor, "Caller is not the depositor");
@@ -83,7 +89,7 @@ pub fn add_liquidity(params: AddLiquidityToMarketParams) -> LiquidityOperationRe
         put_price_waiting_operation(
             params.market_index,
             ADD_LIQUIDITY_PRIORITY_INDEX,
-            Box::new(params),
+            PriceWaitingOperation::from(params),
         );
     }
 
@@ -119,8 +125,8 @@ pub fn add_liquidity(params: AddLiquidityToMarketParams) -> LiquidityOperationRe
 ///
 /// This is an internal function. External callers should use the public `add_liquidity` function
 /// which includes proper caller verification and price waiting operation handling.
-pub fn _add_liquidity(params: &AddLiquidityToMarketParams) -> LiquidityOperationResult {
-    let AddLiquidityToMarketParams {
+pub fn _add_liquidity(params: &AddLiquidityParams) -> LiquidityOperationResult {
+    let AddLiquidityParams {
         market_index,
         depositor,
         ..
@@ -143,12 +149,13 @@ pub fn _add_liquidity(params: &AddLiquidityToMarketParams) -> LiquidityOperation
             return LiquidityOperationResult::Waiting;
         }
 
-        let result = market.add_liquidity_to_market(*params);
+        let result = market.add_liquidity_to_market((*params).into());
 
         if let LiquidityOperationResult::Settled { amount_out } = result {
             set_user_balance(depositor, user_balance - (params.amount + execution_fee));
 
-            // let markets_tokens_ledger = get_house_asset_ledger();
+            // take excution fee
+            update_execution_fees_accumulated(execution_fee, true);
 
             update_user_market_liquidity_shares(depositor, market_index, amount_out, true);
 
