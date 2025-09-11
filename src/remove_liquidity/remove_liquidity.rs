@@ -2,11 +2,15 @@ use ic_cdk::{api::msg_caller, update};
 
 use crate::{
     constants::REMOVE_LIQUIDITY_PRIORITY_INDEX,
+    house_settings::{get_execution_fee, update_execution_fees_accumulated},
     market::market_details::LiquidityOperationResult,
-    pricing_update_management::price_waiting_operation_utils::{
-        is_within_price_update_interval, put_price_waiting_operation,
+    pricing_update_management::{
+        price_waiting_operation_trait::PriceWaitingOperation,
+        price_waiting_operation_utils::{
+            is_within_price_update_interval, put_price_waiting_operation,
+        },
     },
-    remove_liquidity::remove_liquidity_params::RemoveLiquidityFromMarketParams,
+    remove_liquidity::remove_liquidity_params::RemoveLiquidityParams,
     stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME,
     user::balance_utils::{
         get_user_market_liquidity_shares, set_user_market_liquidity_shares, update_user_balance,
@@ -25,8 +29,8 @@ use crate::{
 /// * `params` - [`RemoveLiquidityFromMarketParams`] containing:
 ///   - `market_index` (u64): The unique identifier of the target market
 ///   - `owner` (Principal): The principal ID of the liquidity provider
-///   - `amount_in` (u128): The amount of liquidity shares to remove (with 20 decimal places precision)
-///   - `min_amount_out` (u128): Minimum assets expected in return (slippage protection, with 20 decimal places precision)
+///   - `amount_in` (u128): Liquidity shares to remove (20-decimal precision; shares are distinct from quote asset)
+///   - `min_amount_out` (u128): Minimum quote asset expected in return (slippage protection; 20-decimal precision)
 ///
 /// # Returns
 ///
@@ -47,6 +51,11 @@ use crate::{
 /// If the market's price data is stale (beyond the allowed update interval), the operation
 /// is queued as a price waiting operation and will be executed automatically when fresh
 /// price data becomes available.
+///
+/// # Units
+///
+/// - `amount_in` is specified in market share units (20-decimal precision)
+/// - `min_amount_out` is specified in quote asset units (20-decimal precision)
 ///
 /// # Example Usage
 ///
@@ -72,7 +81,7 @@ use crate::{
 /// }
 /// ```
 #[update(name = "removeLiquidity")]
-pub async fn remove_liquidity(params: RemoveLiquidityFromMarketParams) -> LiquidityOperationResult {
+pub async fn remove_liquidity(params: RemoveLiquidityParams) -> LiquidityOperationResult {
     let owner = msg_caller();
 
     assert!(
@@ -86,7 +95,7 @@ pub async fn remove_liquidity(params: RemoveLiquidityFromMarketParams) -> Liquid
         put_price_waiting_operation(
             params.market_index,
             REMOVE_LIQUIDITY_PRIORITY_INDEX,
-            Box::new(params),
+            PriceWaitingOperation::from(params),
         );
     }
 
@@ -122,8 +131,8 @@ pub async fn remove_liquidity(params: RemoveLiquidityFromMarketParams) -> Liquid
 ///
 /// This is an internal function. External callers should use the public `remove_liquidity` function
 /// which includes proper caller verification and price waiting operation handling.
-pub fn _remove_liquidity(params: &RemoveLiquidityFromMarketParams) -> LiquidityOperationResult {
-    let RemoveLiquidityFromMarketParams {
+pub fn _remove_liquidity(params: &RemoveLiquidityParams) -> LiquidityOperationResult {
+    let RemoveLiquidityParams {
         amount_in,
         market_index,
         owner,
@@ -149,8 +158,13 @@ pub fn _remove_liquidity(params: &RemoveLiquidityFromMarketParams) -> LiquidityO
         if let LiquidityOperationResult::Settled { amount_out } = result {
             set_user_market_liquidity_shares(owner, market_index, user_shares_balance - amount_in);
 
-            update_user_balance(owner, amount_out, true);
+            let execution_fee = get_execution_fee();
 
+            let execution_fee_gotten = execution_fee.min(amount_out);
+
+            update_execution_fees_accumulated(execution_fee_gotten, true);
+
+            update_user_balance(owner, amount_out - execution_fee_gotten, true);
             reference.set(market_index, &(market, last_time_updated));
         }
         return result;

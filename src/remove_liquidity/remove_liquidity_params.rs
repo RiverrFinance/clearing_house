@@ -2,7 +2,9 @@ use candid::{CandidType, Principal};
 use serde::Deserialize;
 
 use crate::{
-    pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation,
+    pricing_update_management::price_waiting_operation_trait::{
+        PriceWaitingOperation, PriceWaitingOperationTrait,
+    },
     remove_liquidity::remove_liquidity::_remove_liquidity,
 };
 
@@ -11,7 +13,7 @@ use crate::{
 /// This struct contains all the necessary information to remove liquidity shares from a
 /// specific market in the clearing house. The owner must be the message caller to ensure security.
 #[derive(CandidType, Deserialize, Copy, Clone)]
-pub struct RemoveLiquidityFromMarketParams {
+pub struct RemoveLiquidityParams {
     /// The unique identifier of the target market to remove liquidity from.
     /// Must correspond to an existing market in the clearing house.
     pub market_index: u64,
@@ -26,16 +28,22 @@ pub struct RemoveLiquidityFromMarketParams {
     /// The user must have sufficient liquidity shares in the specified market.
     pub amount_in: u128,
 
-    /// The minimum amount of assets expected in return.
-    /// This should be specified with 20 decimal places precision (e.g., 950000000000000000000 for 0.095 units).
+    /// The minimum amount of quote asset expected in return.
+    /// Uses 20-decimal precision (e.g., 950000000000000000000 for 0.095 quote units).
     /// This provides slippage protection - if the actual assets received would be
     /// less than this amount, the transaction will fail.
     /// Should be calculated based on current market conditions and acceptable slippage.
     pub min_amount_out: u128,
 }
 
-impl PriceWaitingOperation for RemoveLiquidityFromMarketParams {
+impl PriceWaitingOperationTrait for RemoveLiquidityParams {
     fn execute(&self) {
         _remove_liquidity(self);
+    }
+}
+
+impl From<RemoveLiquidityParams> for PriceWaitingOperation {
+    fn from(params: RemoveLiquidityParams) -> Self {
+        PriceWaitingOperation::RemoveLiquidity(params)
     }
 }
