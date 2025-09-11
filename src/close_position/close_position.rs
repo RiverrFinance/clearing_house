@@ -2,13 +2,13 @@ use crate::close_position::close_position_result::ClosePositionResult;
 
 use crate::close_position::close_position_params::ClosePositionParams;
 use crate::constants::CLOSE_POSITION_PRIORITY_INDEX;
+use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation;
 use crate::pricing_update_management::price_waiting_operation_utils::{
     is_within_price_update_interval, put_price_waiting_operation,
 };
 use crate::stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME;
 use crate::user::balance_utils::update_user_balance;
 use crate::user::user_query::get_user_position_details;
-use candid::Principal;
 use ic_cdk::{api::msg_caller, update};
 
 /// Closes an existing trading position in a specific market.
@@ -72,12 +72,17 @@ use ic_cdk::{api::msg_caller, update};
 pub fn close_position(params: ClosePositionParams) -> ClosePositionResult {
     let owner = msg_caller();
 
-    let result = _close_position(owner, &params);
+    assert!(
+        owner == params.owner,
+        "Caller is not the owner of the position"
+    );
+
+    let result = _close_position(&params);
     if let ClosePositionResult::Waiting = result {
         put_price_waiting_operation(
             params.market_index,
             CLOSE_POSITION_PRIORITY_INDEX,
-            Box::new(params),
+            PriceWaitingOperation::from(params),
         );
     };
 
@@ -115,12 +120,7 @@ pub fn close_position(params: ClosePositionParams) -> ClosePositionResult {
 ///
 /// This is an internal function. External callers should use the public `close_position` function
 /// which includes proper caller verification and price waiting operation handling.
-pub fn _close_position(owner: Principal, params: &ClosePositionParams) -> ClosePositionResult {
-    assert!(
-        owner == params.owner,
-        "Caller is not the owner of the position"
-    );
-
+pub fn _close_position(params: &ClosePositionParams) -> ClosePositionResult {
     let (market_index, position) = get_user_position_details(params.owner, params.position_id);
     MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
         let (mut market, last_price_update_time) =
@@ -135,6 +135,7 @@ pub fn _close_position(owner: Principal, params: &ClosePositionParams) -> CloseP
 
         if let ClosePositionResult::Settled { returns } = result {
             update_user_balance(position.owner, returns, true);
+
             reference.set(market_index, &(market, last_price_update_time));
         }
 
