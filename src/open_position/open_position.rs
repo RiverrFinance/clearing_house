@@ -1,9 +1,10 @@
 use crate::constants::OPEN_POSITION_PRIORITY_INDEX;
-use crate::house_settings::get_execution_fee;
+use crate::house_settings::{get_execution_fee, update_execution_fees_accumulated};
 use crate::market::functions::open_position_in_market::{
     FailureReason, OpenPositioninMarketResult,
 };
 use crate::open_position::open_position_params::OpenPositionParams;
+use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation;
 use crate::pricing_update_management::price_waiting_operation_utils::{
     is_within_price_update_interval, put_price_waiting_operation,
 };
@@ -26,7 +27,7 @@ use ic_cdk::update;
 ///   - `owner` (Principal): The principal ID of the position owner
 ///   - `long` (bool): True for long position, false for short position
 ///   - `market_index` (u64): The unique identifier of the target market
-///   - `collateral` (u128): The collateral amount (with 20 decimal places precision)
+///   - `collateral` (u128): Collateral amount in quote asset (20-decimal precision)
 ///   - `leverage_factor` (u128): The leverage multiplier (with 20 decimal places precision)
 ///   - `acceptable_price_limit` (u128): Maximum acceptable price for the position (with 20 decimal places precision)
 ///   - `reserve_factor` (u128): Reserve factor for risk management (with 20 decimal places precision)
@@ -44,7 +45,7 @@ use ic_cdk::update;
 ///   to prevent unauthorized position creation
 /// - **Balance Check**: User must have sufficient balance to cover both the collateral amount
 ///   and the execution fee
-/// - **Execution Fee**: A small execution fee is deducted from the user's balance
+/// - **Execution Fee**: Deducted in quote asset from the user's balance
 ///
 /// # Price Update Handling
 ///
@@ -91,7 +92,7 @@ pub fn open_position(params: OpenPositionParams) -> OpenPositioninMarketResult {
         put_price_waiting_operation(
             params.market_index,
             OPEN_POSITION_PRIORITY_INDEX,
-            Box::new(params),
+            PriceWaitingOperation::from(params),
         );
     };
 
@@ -152,6 +153,9 @@ pub fn _open_position(params: &OpenPositionParams) -> OpenPositioninMarketResult
         // if it was settled we need to update the user position and balance
         if let OpenPositioninMarketResult::Settled { position } = result {
             set_user_balance(trader, trader_balance - (params.collateral + execution_fee));
+
+            // take excution fee
+            update_execution_fees_accumulated(execution_fee, true);
 
             let position_id = time();
             _put_user_position_detail(trader, params.market_index, position_id, position);
