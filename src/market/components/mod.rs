@@ -1,4 +1,4 @@
 pub mod bias;
-pub mod funding_manager;
-pub mod liquidity_manager;
+pub mod funding_state;
+pub mod liquidity_state;
 pub mod pricing;

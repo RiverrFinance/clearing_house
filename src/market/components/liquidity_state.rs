@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[derive(Default, Deserialize, Copy, Clone, Serialize, CandidType)]
-pub struct HouseLiquidityManager {
+pub struct HouseLiquidityState {
     pub total_liquidity_tokens_minted: u128,
     /// Total Deposit
     ///
@@ -26,7 +26,7 @@ pub struct HouseLiquidityManager {
     /// bad debt owed by house
     /// Bad debt occurrs when positons that shold be liquidated are not liquidated on time, the positions debt on funding fees given
     /// to the house fot the particular market ,  
-    pub bad_debt: u128,
+    pub current_house_bad_debt: u128,
     /// Free Liquidity
     ///
     /// unsused house liquidity
@@ -47,7 +47,7 @@ pub struct HouseLiquidityManager {
     pub last_time_since_borrow_fees_collected: u64,
 }
 
-impl HouseLiquidityManager {
+impl HouseLiquidityState {
     /// The House value is difference of the net sum of tokens in the pool (excluding losses or gains from traders positions)
     /// and the current bad debt of the pool
     /// @dev it is returned as a signed integer becasue in rare cases of extreme bad debt ,this value might be less than zero
@@ -57,6 +57,6 @@ impl HouseLiquidityManager {
             + self.current_shorts_reserve
             + self.current_net_debt
             + self.current_borrow_fees_owed) as i128
-            - self.bad_debt as i128
+            - self.current_house_bad_debt as i128
     }
 }

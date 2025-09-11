@@ -1,7 +1,7 @@
 use ic_cdk::api::time;
 
 // use crate::constants::MAX_ALLOWED_PRICE_CHANGE_INTERVAL;
-use crate::market::components::liquidity_manager::HouseLiquidityManager;
+use crate::market::components::liquidity_state::HouseLiquidityState;
 use crate::market::market_details::MarketDetails;
 use crate::utils::duration_in_seconds;
 
@@ -25,7 +25,7 @@ impl MarketDetails {
         let pool_value = self._house_value(price);
 
         let Self {
-            liquidity_manager,
+            liquidity_state: liquidity_manager,
 
             bias_tracker,
             ..
@@ -43,7 +43,7 @@ impl MarketDetails {
             .shorts
             .calculate_borrowing_factor_per_sec(pool_value, short_reserve);
 
-        let HouseLiquidityManager {
+        let HouseLiquidityState {
             last_time_since_borrow_fees_collected,
             current_borrow_fees_owed,
             ..

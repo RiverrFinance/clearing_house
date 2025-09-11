@@ -13,13 +13,13 @@ enum FundingChangeType {
 
 #[cfg_attr(test, derive(Debug, Clone, Copy, PartialEq, Eq))]
 #[derive(Default, Deserialize, Serialize, CandidType)]
-pub struct FundingManager {
+pub struct FundingState {
     /// Last time updated timetamp
     pub last_time_updated: u64,
     /// Next funding factor Per Second
     ///  to be paid after elapsed duration by either long or short
     /// Positive value for long paying shorts and
-    /// negative value for shorts paying long
+    /// negative value for shorts paying longg
     pub next_funding_factor_ps: i128,
 
     /// Min funding factor per second
@@ -40,7 +40,7 @@ pub struct FundingManager {
     pub funding_decrease_factor_ps: u128,
 }
 
-impl FundingManager {
+impl FundingState {
     pub fn current_funding_factor_ps(&self) -> i128 {
         return self.next_funding_factor_ps;
     }

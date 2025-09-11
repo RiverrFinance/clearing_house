@@ -1,5 +1,5 @@
 use crate::market::components::bias::Bias;
-use crate::market::components::funding_manager::FundingManager;
+use crate::market::components::funding_state::FundingState;
 use crate::market::market_details::MarketDetails;
 use crate::math::math::mul_div;
 use crate::utils::duration_in_seconds;
@@ -20,7 +20,7 @@ impl MarketDetails {
         F: Fn(u64) -> u64,
     {
         let Self {
-            funding_manager,
+            funding_state: funding_manager,
             bias_tracker,
             ..
         } = self;
@@ -29,7 +29,7 @@ impl MarketDetails {
 
         let current_funding_factor_ps = funding_manager.current_funding_factor_ps();
 
-        let FundingManager {
+        let FundingState {
             last_time_updated, ..
         } = funding_manager;
 

@@ -1,5 +1,5 @@
 use crate::market::components::bias::UpdateBiasDetailsParamters;
-use crate::market::components::liquidity_manager::HouseLiquidityManager;
+use crate::market::components::liquidity_state::HouseLiquidityState;
 use crate::market::market_details::{MarketDetails, MarketState};
 use candid::{CandidType, Deserialize};
 
@@ -101,38 +101,38 @@ impl MarketDetails {
 
         let added_reserve = apply_precision(reserve_factor, collateral + debt); // 
 
-        let house_value_without_pnl = i128::max(0, self.liquidity_manager.static_value()) as u128;
+        let house_value_without_pnl = i128::max(0, self.liquidity_state.static_value()) as u128;
 
         let Self {
-            liquidity_manager,
+            liquidity_state: liquidity_manager,
             bias_tracker,
             ..
         } = self;
 
-        let HouseLiquidityManager {
-            free_liquidity,
-            current_longs_reserve,
-            current_shorts_reserve,
-            current_net_debt,
+        let HouseLiquidityState {
+            mut free_liquidity,
+            mut current_longs_reserve,
+            mut current_shorts_reserve,
+            mut current_net_debt,
             shorts_max_reserve_factor,
             longs_max_reserve_factor,
-            total_deposit,
+            mut total_deposit,
             ..
-        } = liquidity_manager;
+        } = *liquidity_manager;
 
         let (max_reserve_for_bias, current_reserve_for_bias) = if long {
             (
-                apply_precision(*longs_max_reserve_factor, house_value_without_pnl),
-                current_longs_reserve,
+                apply_precision(longs_max_reserve_factor, house_value_without_pnl),
+                &mut current_longs_reserve,
             )
         } else {
             (
-                apply_precision(*shorts_max_reserve_factor, house_value_without_pnl),
-                current_shorts_reserve,
+                apply_precision(shorts_max_reserve_factor, house_value_without_pnl),
+                &mut current_shorts_reserve,
             )
         };
 
-        if debt + added_reserve > *free_liquidity
+        if debt + added_reserve > free_liquidity
             || added_reserve + *current_reserve_for_bias > max_reserve_for_bias
         {
             return OpenPositioninMarketResult::Failed {
@@ -141,13 +141,23 @@ impl MarketDetails {
         }
 
         // reduce free liquidity
-        *free_liquidity = *free_liquidity - (added_reserve + debt);
+        free_liquidity = free_liquidity - (added_reserve + debt);
         // increase current debt
-        *current_net_debt += debt;
+        current_net_debt += debt;
         // increase current debt for bias
         *current_reserve_for_bias += added_reserve;
         // increase total deposit
-        *total_deposit += collateral;
+        total_deposit += collateral;
+
+        *liquidity_manager = HouseLiquidityState {
+            free_liquidity,
+            current_longs_reserve,
+            current_shorts_reserve,
+            current_net_debt,
+            total_deposit,
+            ..*liquidity_manager
+        };
+
         let position_open_interest = debt + collateral;
 
         let units = to_precision(position_open_interest, price);

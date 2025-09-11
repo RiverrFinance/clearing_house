@@ -1,5 +1,7 @@
 use crate::close_position::close_position_result::ClosePositionResult;
-use crate::market::components::liquidity_manager::HouseLiquidityManager;
+use crate::market::components::liquidity_state::HouseLiquidityState;
+use crate::market::functions::close_position::close_position_with_net_negative_funding::close_position_with_net_negative_funding;
+use crate::market::functions::close_position::close_position_with_net_positive_funding::close_position_with_net_positive_funding;
 use crate::market::market_details::MarketDetails;
 
 use crate::market::components::bias::UpdateBiasDetailsParamters;
@@ -29,7 +31,9 @@ impl MarketDetails {
         let PositionDetails { long, .. } = position;
         // if closing a short and price is higher than acceptable price
         // if closing long ,and price is lower than acceptable price
-        if (!long && price > acceptable_price_limit) || ((long) && price < acceptable_price_limit) {
+        if (long == false && price > acceptable_price_limit)
+            || (long && price < acceptable_price_limit)
+        {
             return ClosePositionResult::Failed;
         }
         let current_cummulative_funding_factor =
@@ -46,7 +50,7 @@ impl MarketDetails {
         let position_pnl = position.get_pnl(price);
 
         let Self {
-            liquidity_manager,
+            liquidity_state: liquidity_manager,
             bias_tracker,
             ..
         } = self;
@@ -65,51 +69,66 @@ impl MarketDetails {
 
         bias_tracker.update_bias_details(params, long);
 
-        let HouseLiquidityManager {
+        let HouseLiquidityState {
+            mut total_deposit,
+            mut free_liquidity,
+            mut current_longs_reserve,
+            mut current_shorts_reserve,
+            mut current_net_debt,
+            mut current_house_bad_debt,
+            mut current_borrow_fees_owed,
+            ..
+        } = *liquidity_manager;
+
+        let (net_free_liquidity, mut collateral_out, incured_house_bad_debt_due_to_position) =
+            if net_funding_fee < 0 {
+                close_position_with_net_negative_funding(
+                    position,
+                    free_liquidity,
+                    net_funding_fee.neg(),
+                    net_borrowing_fee,
+                    position_pnl,
+                )
+            } else {
+                close_position_with_net_positive_funding(
+                    position,
+                    free_liquidity,
+                    net_funding_fee,
+                    net_borrowing_fee,
+                    position_pnl,
+                )
+            };
+
+        // removed positions share of changes to debt and borrow_fees even if it is not fully repaid
+        current_net_debt -= position.debt;
+        current_borrow_fees_owed -= net_borrowing_fee;
+
+        // collateral out is only what is available in market
+        collateral_out = collateral_out.min(total_deposit);
+        total_deposit -= collateral_out;
+
+        // bad debt is prioritised to be repaid before free liquidity is updated
+        let bad_debt_removed = net_free_liquidity.min(current_house_bad_debt);
+        current_house_bad_debt =
+            (current_house_bad_debt + incured_house_bad_debt_due_to_position) - bad_debt_removed;
+        free_liquidity = net_free_liquidity - bad_debt_removed;
+
+        if long {
+            current_longs_reserve -= position.max_reserve
+        } else {
+            current_shorts_reserve -= position.max_reserve
+        }
+
+        *liquidity_manager = HouseLiquidityState {
             total_deposit,
             free_liquidity,
             current_longs_reserve,
             current_shorts_reserve,
             current_net_debt,
-            bad_debt: current_house_bad_debt,
+            current_house_bad_debt,
             current_borrow_fees_owed,
-            ..
-        } = liquidity_manager;
-
-        let (net_free_liquidity, mut collateral_out, new_house_bad_debt) = if net_funding_fee < 0 {
-            position.close_position_with_net_negative_funding(
-                *free_liquidity,
-                net_funding_fee,
-                net_borrowing_fee,
-                position_pnl,
-            )
-        } else {
-            position.close_position_with_net_positive_funding(
-                *free_liquidity,
-                net_funding_fee,
-                net_borrowing_fee,
-                position_pnl,
-            )
+            ..*liquidity_manager
         };
-
-        // removed positions share of changes to debt and borrow_fees even if it is not fully repaid
-        *current_net_debt -= position.debt;
-        *current_borrow_fees_owed -= net_borrowing_fee;
-
-        // collateral out is only what is available in market
-        collateral_out = collateral_out.min(*total_deposit);
-        *total_deposit -= collateral_out;
-
-        // bad debt is prioritised to be repaid before free liquidity is updated
-        let bad_debt_removed = net_free_liquidity.min(*current_house_bad_debt);
-        *current_house_bad_debt = (*current_house_bad_debt + new_house_bad_debt) - bad_debt_removed;
-        *free_liquidity = net_free_liquidity - bad_debt_removed;
-
-        if long {
-            *current_longs_reserve -= position.max_reserve
-        } else {
-            *current_shorts_reserve -= position.max_reserve
-        }
 
         ClosePositionResult::Settled {
             returns: collateral_out,
