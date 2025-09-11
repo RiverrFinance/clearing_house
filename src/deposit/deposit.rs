@@ -14,7 +14,7 @@ use crate::{
 /// # Parameters
 ///
 /// * `params` - [`DepositParams`] containing:
-///   - `amount` (u128): The amount to deposit (with 20 decimal places precision)
+///   - `amount` (u128): Quote asset amount to deposit (20-decimal precision)
 ///   - `block_index` (Option<BlockIndex>): Optional block index for transaction verification
 ///
 /// # Returns

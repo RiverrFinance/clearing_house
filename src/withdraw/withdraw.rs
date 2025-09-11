@@ -15,7 +15,7 @@ use crate::{
 /// # Parameters
 ///
 /// * `params` - [`WithdrawParams`] containing:
-///   - `amount` (u128): The amount to withdraw (with 20 decimal places precision)
+///   - `amount` (u128): Quote asset amount to withdraw (20-decimal precision)
 ///
 /// # Returns
 ///
