@@ -42,10 +42,7 @@ pub struct CreateMarketParams {
 
 // #[update(name = "addMarket", guard = "admin_guard")]
 #[update(name = "createNewMarket", guard = "admin_guard")]
-pub fn create_new_market(
-    params: CreateMarketParams,
-    asset_pricing_details: AssetPricingDetails,
-) -> u64 {
+pub fn create_new_market(params: CreateMarketParams) -> u64 {
     let mut liquidity_state = HouseLiquidityState::default();
     liquidity_state.longs_max_reserve_factor = params.longs_max_reserve_factor;
     liquidity_state.shorts_max_reserve_factor = params.shorts_max_reserve_factor;
@@ -63,7 +60,7 @@ pub fn create_new_market(
     // bias.shorts_max_reserve_factor = params.shorts_max_reserve_factor;
 
     let mut market_details = MarketDetails::default();
-    market_details.index_asset_pricing_details = asset_pricing_details;
+    market_details.index_asset_pricing_details = params.asset_pricing_details;
     market_details.state = params.init_state;
     market_details.funding_state = funding_state;
     market_details.bias_tracker = bias;
