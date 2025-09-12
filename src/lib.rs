@@ -2,7 +2,7 @@ use crate::stable_memory::{ADMIN, HOUSE_SETTINGS};
 use candid::Principal;
 use ic_cdk::{export_candid, init};
 
-use crate::admin_roles::add_market::CreateMarketParams;
+use crate::admin_roles::create_market::CreateMarketParams;
 use crate::house_settings::HouseDetails;
 use crate::pricing_update_management::price_fetch::AssetPricingDetails;
 
@@ -45,7 +45,7 @@ pub mod withdraw;
 
 // Update functions
 pub use add_liquidity::add_liquidity::add_liquidity;
-pub use admin_roles::add_market::create_new_market;
+pub use admin_roles::create_market::create_new_market;
 pub use close_position::close_position::close_position;
 pub use deposit::deposit::deposit_into_account;
 pub use open_position::open_position::open_position;

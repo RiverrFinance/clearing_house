@@ -42,7 +42,10 @@ pub struct CreateMarketParams {
 
 // #[update(name = "addMarket", guard = "admin_guard")]
 #[update(name = "createNewMarket", guard = "admin_guard")]
-pub fn create_new_market(params: CreateMarketParams, asset_pricing_details: AssetPricingDetails) {
+pub fn create_new_market(
+    params: CreateMarketParams,
+    asset_pricing_details: AssetPricingDetails,
+) -> u64 {
     let mut liquidity_state = HouseLiquidityState::default();
     liquidity_state.longs_max_reserve_factor = params.longs_max_reserve_factor;
     liquidity_state.shorts_max_reserve_factor = params.shorts_max_reserve_factor;
@@ -68,5 +71,6 @@ pub fn create_new_market(params: CreateMarketParams, asset_pricing_details: Asse
 
     MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
         reference.push(&(market_details, 0));
+        return reference.len() - 1;
     })
 }
