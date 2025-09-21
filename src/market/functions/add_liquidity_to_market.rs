@@ -24,70 +24,90 @@ impl MarketDetails {
         &mut self,
         params: AddLiquidityToMarketParams,
     ) -> LiquidityOperationResult {
-        let price_update = self.pricing_manager.get_price();
-        //.get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
-        self._add_liquidity_to_market_with_price(params, price_update)
+        let active_price = self.pricing_manager.get_price();
+
+        self._add_liquidity_to_market_with_price(params, active_price)
     }
 
     pub fn _add_liquidity_to_market_with_price(
         &mut self,
         params: AddLiquidityToMarketParams,
-        price: u128,
+        active_price: Option<u128>,
     ) -> LiquidityOperationResult {
         let AddLiquidityToMarketParams {
             amount,
             min_amount_out,
         } = params;
 
-        // cap during high pnl
-        let house_value = self._house_value(price);
-
         let Self {
-            liquidity_state: liquidity_manager,
+            mut liquidity_state,
             ..
-        } = self;
+        } = *self;
 
         let HouseLiquidityState {
             mut total_deposit,
-            mut total_liquidity_tokens_minted,
+            mut total_liquidity_shares,
             mut free_liquidity,
-            current_house_bad_debt: mut bad_debt,
+            mut current_house_bad_debt,
+            current_longs_reserve,
+            current_shorts_reserve,
             ..
-        } = *liquidity_manager;
+        } = liquidity_state;
 
-        let liquidity_tokens_to_mint = if house_value == 0 {
+        let liquidity_shares_out = if total_liquidity_shares == 0
+            && // if there is no positions in the market
+             current_shorts_reserve == 0 && current_longs_reserve ==0
+        {
             amount
         } else {
-            mul_div(amount, total_liquidity_tokens_minted, house_value)
+            let Some(price) = active_price else {
+                return LiquidityOperationResult::Waiting { id: None };
+            };
+
+            let house_value = self._house_value(price);
+
+            if house_value == 0 {
+                //if total_liquidity_shares is not zero but house value is zero
+                // undefined behaviour can occur and so the operation should fail
+                return LiquidityOperationResult::Failed("House value is zero".to_string());
+            } else {
+                // cap during high pnl
+
+                mul_div(amount, total_liquidity_shares, house_value)
+            }
         };
 
-        if liquidity_tokens_to_mint < min_amount_out {
-            return LiquidityOperationResult::Failed;
+        if liquidity_shares_out < min_amount_out {
+            return LiquidityOperationResult::Failed(
+                "Liquidity shares out is less than min amount out".to_string(),
+            );
         }
         // increase total deposit
         total_deposit += amount;
 
         // attempts to cancel out  bad debt before increasing free_liquidity
-        let repaid_bad_debt = (bad_debt).min(amount);
-        if repaid_bad_debt == bad_debt {
+        let repaid_bad_debt = (current_house_bad_debt).min(amount);
+        if repaid_bad_debt == current_house_bad_debt {
             // amount is enough to cancel off  bad debt ;
 
             free_liquidity += amount - repaid_bad_debt;
         }
-        bad_debt -= repaid_bad_debt;
+        current_house_bad_debt -= repaid_bad_debt;
 
-        total_liquidity_tokens_minted += liquidity_tokens_to_mint;
+        total_liquidity_shares += liquidity_shares_out;
 
-        *liquidity_manager = HouseLiquidityState {
+        liquidity_state = HouseLiquidityState {
             total_deposit,
-            total_liquidity_tokens_minted,
+            total_liquidity_shares,
             free_liquidity,
-            current_house_bad_debt: bad_debt,
-            ..*liquidity_manager
+            current_house_bad_debt,
+            ..liquidity_state
         };
 
+        self.liquidity_state = liquidity_state;
+
         return LiquidityOperationResult::Settled {
-            amount_out: liquidity_tokens_to_mint,
+            amount_out: liquidity_shares_out,
         };
     }
 }

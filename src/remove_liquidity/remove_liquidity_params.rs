@@ -2,6 +2,7 @@ use candid::{CandidType, Principal};
 use serde::Deserialize;
 
 use crate::{
+    market::functions::remove_liquidity::RemoveLiquidityFromMarketParams,
     pricing_update_management::price_waiting_operation_trait::{
         PriceWaitingOperation, PriceWaitingOperationTrait,
     },
@@ -45,5 +46,19 @@ impl PriceWaitingOperationTrait for RemoveLiquidityParams {
 impl From<RemoveLiquidityParams> for PriceWaitingOperation {
     fn from(params: RemoveLiquidityParams) -> Self {
         PriceWaitingOperation::RemoveLiquidity(params)
+    }
+}
+
+impl Into<RemoveLiquidityFromMarketParams> for RemoveLiquidityParams {
+    fn into(self) -> RemoveLiquidityFromMarketParams {
+        let Self {
+            min_amount_out,
+            amount_in,
+            ..
+        } = self;
+        RemoveLiquidityFromMarketParams {
+            min_amount_out,
+            amount_in,
+        }
     }
 }

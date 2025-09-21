@@ -12,7 +12,7 @@ use crate::{
         market_details::{MarketDetails, MarketState},
     },
     pricing_update_management::price_fetch::AssetPricingDetails,
-    stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME,
+    stable_memory::MARKETS_LIST,
 };
 
 #[derive(Default, Deserialize, CandidType)]
@@ -66,8 +66,8 @@ pub fn create_new_market(params: CreateMarketParams) -> u64 {
     market_details.bias_tracker = bias;
     market_details.liquidity_state = liquidity_state;
 
-    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
-        reference.push(&(market_details, 0));
+    MARKETS_LIST.with_borrow_mut(|reference| {
+        reference.push(&market_details);
         return reference.len() - 1;
     })
 }

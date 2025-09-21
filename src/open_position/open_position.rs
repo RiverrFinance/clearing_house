@@ -8,7 +8,7 @@ use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitin
 use crate::pricing_update_management::price_waiting_operation_utils::{
     is_within_price_update_interval, put_price_waiting_operation,
 };
-use crate::stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME;
+use crate::stable_memory::MARKETS_LIST;
 use crate::user::balance_utils::{get_user_balance, set_user_balance};
 use crate::user::position_util::_put_user_position_detail;
 
@@ -139,14 +139,10 @@ pub fn _open_position(params: &OpenPositionParams) -> OpenPositioninMarketResult
             reason: FailureReason::InsufficientBalance,
         };
     }
-    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
-        let (mut market, last_price_update_time) = reference
+    MARKETS_LIST.with_borrow_mut(|reference| {
+        let mut market = reference
             .get(params.market_index)
             .expect("Market does not exist");
-
-        if is_within_price_update_interval(last_price_update_time) == false {
-            return OpenPositioninMarketResult::Waiting;
-        }
 
         let result = market.open_position_in_market(*params);
 
@@ -160,7 +156,7 @@ pub fn _open_position(params: &OpenPositionParams) -> OpenPositioninMarketResult
             let position_id = time();
             _put_user_position_detail(trader, params.market_index, position_id, position);
 
-            reference.set(params.market_index, &(market, last_price_update_time));
+            reference.set(params.market_index, &market);
         };
 
         return result;

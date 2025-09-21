@@ -8,15 +8,15 @@ use ic_stable_structures::storable::{Bound, Storable};
 use crate::market::components::bias::Bias;
 use crate::market::components::funding_state::FundingState;
 use crate::market::components::liquidity_state::HouseLiquidityState;
-use crate::market::components::pricing::PricingManager;
+use crate::market::components::pricing::PricingState;
 use crate::math::math::to_precision;
 use crate::pricing_update_management::price_fetch::AssetPricingDetails;
 
 #[derive(CandidType, Deserialize)]
 pub enum LiquidityOperationResult {
     Settled { amount_out: u128 },
-    Waiting,
-    Failed,
+    Waiting { id: Option<(u64, u8, u64)> }, // market index ,priority index,operation id
+    Failed(String),
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
@@ -37,7 +37,7 @@ pub struct MarketDetails {
     pub index_asset_pricing_details: AssetPricingDetails,
     pub bias_tracker: Bias,
     pub funding_state: FundingState,
-    pub pricing_manager: PricingManager,
+    pub pricing_manager: PricingState,
     pub state: MarketState,
     pub liquidity_state: HouseLiquidityState,
 }
@@ -53,8 +53,13 @@ impl MarketDetails {
         price_to_precision
     }
 
-    /// Calculates the current value of the
-    pub fn _house_value(&mut self, price: u128) -> u128 {
+    /// Calculates the current value of the value of the house by taking into account both the
+    /// debt owed
+    /// the pnl due to traders positions
+    /// the free liquidity
+    /// the current bad debt
+    /// the current borrow fees owed
+    pub fn _house_value(&self, price: u128) -> u128 {
         let house_value = max(
             self.liquidity_state.static_value() as i128 + self.bias_tracker.net_house_pnl(price),
             0,

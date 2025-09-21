@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[derive(Default, Deserialize, Copy, Clone, Serialize, CandidType)]
 pub struct HouseLiquidityState {
-    pub total_liquidity_tokens_minted: u128,
+    pub total_liquidity_shares: u128,
     /// Total Deposit
     ///
     /// total deposit into a amrket by both liquidity providers and traders

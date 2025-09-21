@@ -8,11 +8,9 @@ use crate::{
     market::market_details::MarketDetails,
     pricing_update_management::{
         price_waiting_operation_trait::{PriceWaitingOperation, PriceWaitingOperationTrait},
-        price_waiting_operation_utils::{
-            is_within_price_update_interval, put_price_waiting_operation,
-        },
+        price_waiting_operation_utils::put_price_waiting_operation,
     },
-    stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME,
+    stable_memory::MARKETS_LIST,
 };
 
 #[derive(CandidType, Deserialize)]
@@ -47,17 +45,13 @@ pub fn collect_borrow_fees(market_index: u64) {
 }
 
 fn _collect_borrow_fees(market_index: u64) -> bool {
-    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
+    MARKETS_LIST.with_borrow_mut(|reference| {
         // let Some((mut market, last_price_update_time) = reference.get(market_index).unwrap()
-        let (mut market, last_price_update_time) = reference.get(market_index).unwrap();
-
-        if is_within_price_update_interval(last_price_update_time) == false {
-            return false;
-        }
+        let mut market = reference.get(market_index).expect("Market does not exist");
 
         market.collect_borrowing_payment();
 
-        reference.set(market_index, &(market, last_price_update_time));
+        reference.set(market_index, &market);
 
         return true;
     })

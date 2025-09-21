@@ -277,9 +277,4 @@ To extract .did file
    candid-extractor target/wasm32-unknown-unknown/release/clearing_house.wasm > src/clearing_house.did
 ```
 
-To run all tests:
-
-```sh
-cargo test
-
-```
+### *For Exmaple see Scripts/functions*:

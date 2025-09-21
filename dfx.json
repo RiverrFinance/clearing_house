@@ -6,6 +6,6 @@
       "type": "rust"
     }
   },
-  "output_env_file": ".env",
+  "output_env_file": "dfx.env",
   "version": 1
 }

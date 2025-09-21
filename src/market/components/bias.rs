@@ -51,8 +51,8 @@ impl Bias {
         longs.total_open_interest + shorts.total_open_interest
     }
 
-    pub fn total_open_interest(self, is_long: bool) -> u128 {
-        let Self { longs, shorts, .. } = self;
+    pub fn total_open_interest_for_bias(self, is_long: bool) -> u128 {
+        let Self { longs, shorts } = self;
         if is_long {
             longs.total_open_interest
         } else {
@@ -160,37 +160,37 @@ impl BiasDetails {
     /// @dev at any point in time this figure is bounded
     /// bounded above by total_reserve as that as that is the max the house can lose
     /// bounded below by  the difference between  total_open_interest_dynamic (see BiasDetails) and net_debt
-    pub fn traders_pnl_for_specific_bias(&self, price: u128, is_long: bool) -> i128 {
-        let Self {
-            total_open_interest,
-            total_units,
-            total_reserve,
-            total_open_interest_dynamic,
-            total_debt_of_traders,
-            ..
-        } = *self;
-        let sign = if is_long { 1 } else { -1 };
+    // pub fn traders_pnl_for_specific_bias(&self, price: u128, is_long: bool) -> i128 {
+    //     let Self {
+    //         total_open_interest,
+    //         total_units,
+    //         total_reserve,
+    //         total_open_interest_dynamic,
+    //         total_debt_of_traders,
+    //         ..
+    //     } = *self;
+    //     let sign = if is_long { 1 } else { -1 };
 
-        let traders_pnl = bound_signed(
-            (apply_precision(total_units, price) as i128 - total_open_interest as i128) * sign,
-            // worst case scenerio ,total open interest dynamic less than
-            (total_open_interest_dynamic - (total_debt_of_traders) as i128).max(0),
-            total_reserve as i128,
-        );
-        return traders_pnl;
-    }
+    //     let traders_pnl = bound_signed(
+    //         (apply_precision(total_units, price) as i128 - total_open_interest as i128) * sign,
+    //         // worst case scenerio ,total open interest dynamic less than
+    //         (total_open_interest_dynamic - (total_debt_of_traders) as i128).max(0),
+    //         total_reserve as i128,
+    //     );
+    //     return traders_pnl;
+    // }
 
-    pub fn reserve_value(&self, price: u128, is_long: bool) -> u128 {
-        let Self {
-            total_open_interest_dynamic,
-            ..
-        } = *self;
-        let traders_pnl = self.traders_pnl_for_specific_bias(price, is_long);
+    // pub fn reserve_value(&self, price: u128, is_long: bool) -> u128 {
+    //     let Self {
+    //         total_open_interest_dynamic,
+    //         ..
+    //     } = *self;
+    //     let traders_pnl = self.traders_pnl_for_specific_bias(price, is_long);
 
-        let traders_net_payout = (total_open_interest_dynamic as i128 + traders_pnl) as u128;
+    //     let traders_net_payout = (total_open_interest_dynamic as i128 + traders_pnl) as u128;
 
-        return traders_net_payout;
-    }
+    //     return traders_net_payout;
+    // }
 
     pub fn calculate_borrowing_factor_per_sec(
         &self,
@@ -243,7 +243,7 @@ impl BiasDetails {
     /// For cummulative funding factor ,it is updated during time of collection as the factor value has been precalculated and stored in the liquidity_manager for Market
     /// For updating cummulative  borrowing factor ,this  precalculated value is stored in the respective biases and  when
     /// this function is called with new factor to be paid after durtion as argument ,the current payment is calculated and subtracted from open interest and returned from function  
-    pub fn update_cumulative_borrowing_factor(&mut self, delta_cfr: u128) -> u128 {
+    pub fn update_cumulative_borrowing_factor(&mut self, new_cbr: u128) -> u128 {
         let Self {
             current_borrowing_factor: previous_borrowing_factor,
             total_open_interest,
@@ -252,16 +252,13 @@ impl BiasDetails {
         // amount paid
         let value = apply_precision(previous_borrowing_factor, total_open_interest);
 
-        //  // the value  that can be piad out i
-        //  value = (self.total_open_interest_dynamic - self.total_debt_of_traders).min(value);
-
         // net open_interest when trader has lost all collateral
         self.total_open_interest_dynamic = self.total_open_interest_dynamic - value as i128;
 
         // cummulative paid borrwing factor since  instantiating is increased
         self.cummulative_borrowing_factor_since_epoch += previous_borrowing_factor;
 
-        self.current_borrowing_factor = delta_cfr;
+        self.current_borrowing_factor = new_cbr;
         return value;
     }
 

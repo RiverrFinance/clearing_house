@@ -6,12 +6,10 @@ use crate::{
     market::market_details::LiquidityOperationResult,
     pricing_update_management::{
         price_waiting_operation_trait::PriceWaitingOperation,
-        price_waiting_operation_utils::{
-            is_within_price_update_interval, put_price_waiting_operation,
-        },
+        price_waiting_operation_utils::put_price_waiting_operation,
     },
     remove_liquidity::remove_liquidity_params::RemoveLiquidityParams,
-    stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME,
+    stable_memory::MARKETS_LIST,
     user::balance_utils::{
         get_user_market_liquidity_shares, set_user_market_liquidity_shares, update_user_balance,
     },
@@ -91,12 +89,16 @@ pub async fn remove_liquidity(params: RemoveLiquidityParams) -> LiquidityOperati
 
     let result = _remove_liquidity(&params);
 
-    if let LiquidityOperationResult::Waiting = result {
-        put_price_waiting_operation(
+    if let LiquidityOperationResult::Waiting { id: _ } = result {
+        let tx_id = put_price_waiting_operation(
             params.market_index,
             REMOVE_LIQUIDITY_PRIORITY_INDEX,
             PriceWaitingOperation::from(params),
-        );
+        ) as u64;
+
+        return LiquidityOperationResult::Waiting {
+            id: Some((params.market_index, REMOVE_LIQUIDITY_PRIORITY_INDEX, tx_id)),
+        };
     }
 
     return result;
@@ -142,18 +144,15 @@ pub fn _remove_liquidity(params: &RemoveLiquidityParams) -> LiquidityOperationRe
     let user_shares_balance = get_user_market_liquidity_shares(owner, market_index);
 
     if user_shares_balance < amount_in {
-        return LiquidityOperationResult::Failed;
+        return LiquidityOperationResult::Failed(
+            "User shares balance is less than amount in".to_string(),
+        );
     };
 
-    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
-        let (mut market, last_time_updated) = reference.get(market_index).unwrap();
+    MARKETS_LIST.with_borrow_mut(|reference| {
+        let mut market = reference.get(market_index).unwrap();
 
-        // check if price update interval is within the allowed interval
-        if is_within_price_update_interval(last_time_updated) == false {
-            return LiquidityOperationResult::Waiting;
-        }
-
-        let result = market.remove_liquidity_from_market(*params);
+        let result = market.remove_liquidity_from_market((*params).into());
 
         if let LiquidityOperationResult::Settled { amount_out } = result {
             set_user_market_liquidity_shares(owner, market_index, user_shares_balance - amount_in);
@@ -165,7 +164,7 @@ pub fn _remove_liquidity(params: &RemoveLiquidityParams) -> LiquidityOperationRe
             update_execution_fees_accumulated(execution_fee_gotten, true);
 
             update_user_balance(owner, amount_out - execution_fee_gotten, true);
-            reference.set(market_index, &(market, last_time_updated));
+            reference.set(market_index, &market);
         }
         return result;
     })

@@ -1,0 +1,18 @@
+{
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@ethersproject/units": "^5.8.0",
+    "@icp-sdk/core": "^4.0.2",
+    "buffer": "^6.0.3",
+    "child_process": "^1.0.2",
+    "dotenv": "^17.2.2"
+  },
+  "type": "module"
+}

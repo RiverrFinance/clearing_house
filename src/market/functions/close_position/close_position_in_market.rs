@@ -13,21 +13,21 @@ impl MarketDetails {
         position: PositionDetails,
         acceptable_price_limit: u128,
     ) -> ClosePositionResult {
-        let price = self.pricing_manager.get_price();
+        let active_price = self.pricing_manager.get_price();
 
-        self._close_position_with_price_option(position, acceptable_price_limit, price)
+        self._close_position_with_price_option(position, acceptable_price_limit, active_price)
     }
 
     pub fn _close_position_with_price_option(
         &mut self,
         position: PositionDetails,
         acceptable_price_limit: u128,
-        price: u128,
+        active_price: Option<u128>,
     ) -> ClosePositionResult {
-        // self
-        // .pricing_manager
-        // .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
-        //  if let Some(price) = price_update {
+        let Some(price) = active_price else {
+            return ClosePositionResult::Waiting;
+        };
+
         let PositionDetails { long, .. } = position;
         // if closing a short and price is higher than acceptable price
         // if closing long ,and price is lower than acceptable price
@@ -42,10 +42,11 @@ impl MarketDetails {
         let current_cummulative_borrowing_factor =
             self.get_cummulative_borrowing_factor_since_epoch(long);
 
-        let net_borrowing_fee =
+        let position_net_borrowing_fee =
             position.get_net_borrowing_fee(current_cummulative_borrowing_factor);
 
-        let net_funding_fee = position.get_net_funding_fee(current_cummulative_funding_factor);
+        let position_net_funding_fee =
+            position.get_net_funding_fee(current_cummulative_funding_factor);
 
         let position_pnl = position.get_pnl(price);
 
@@ -56,8 +57,8 @@ impl MarketDetails {
         } = self;
 
         let position_open_interest = position.open_interest();
-        let delta_open_interest_dynamic =
-            position_open_interest as i128 + net_funding_fee - (net_borrowing_fee as i128);
+        let delta_open_interest_dynamic = position_open_interest as i128 + position_net_funding_fee
+            - (position_net_borrowing_fee as i128);
 
         let params = UpdateBiasDetailsParamters {
             delta_net_debt_of_traders: position.debt.neg(),
@@ -80,38 +81,48 @@ impl MarketDetails {
             ..
         } = *liquidity_manager;
 
-        let (net_free_liquidity, mut collateral_out, incured_house_bad_debt_due_to_position) =
-            if net_funding_fee < 0 {
+        let (mut net_free_liquidity, mut collateral_out, incured_house_bad_debt_due_to_position) =
+            if position_net_funding_fee < 0 {
                 close_position_with_net_negative_funding(
                     position,
                     free_liquidity,
-                    net_funding_fee.neg(),
-                    net_borrowing_fee,
+                    position_net_funding_fee.neg(),
+                    position_net_borrowing_fee,
                     position_pnl,
                 )
             } else {
                 close_position_with_net_positive_funding(
                     position,
                     free_liquidity,
-                    net_funding_fee,
-                    net_borrowing_fee,
+                    position_net_funding_fee,
+                    position_net_borrowing_fee,
                     position_pnl,
                 )
             };
 
         // removed positions share of changes to debt and borrow_fees even if it is not fully repaid
         current_net_debt -= position.debt;
-        current_borrow_fees_owed -= net_borrowing_fee;
+        current_borrow_fees_owed -= position_net_borrowing_fee;
 
         // collateral out is only what is available in market
         collateral_out = collateral_out.min(total_deposit);
         total_deposit -= collateral_out;
 
-        // bad debt is prioritised to be repaid before free liquidity is updated
-        let bad_debt_removed = net_free_liquidity.min(current_house_bad_debt);
-        current_house_bad_debt =
-            (current_house_bad_debt + incured_house_bad_debt_due_to_position) - bad_debt_removed;
-        free_liquidity = net_free_liquidity - bad_debt_removed;
+        // check position incured bad debt is greater than 0, in which case a bad debt has occured
+
+        if incured_house_bad_debt_due_to_position > 0 {
+            // in this case net_free_liquidity will be zero
+            current_house_bad_debt += incured_house_bad_debt_due_to_position
+        } else {
+            // when no bad debt was incured
+            //@dev   bad debt is prioritised to be repaid before free liquidity is increased
+            let bad_debt_removed = net_free_liquidity.min(current_house_bad_debt);
+            current_house_bad_debt -= bad_debt_removed;
+
+            net_free_liquidity -= bad_debt_removed;
+        }
+
+        free_liquidity = net_free_liquidity;
 
         if long {
             current_longs_reserve -= position.max_reserve

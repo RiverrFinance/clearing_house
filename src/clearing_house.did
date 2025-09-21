@@ -1,4 +1,9 @@
-type AddLiquidityToMarketParams = record { min_amount_out : nat; amount : nat };
+type AddLiquidityParams = record {
+  depositor : principal;
+  marketIndex : nat64;
+  amount : nat;
+  minAmountOut : nat;
+};
 type AssetClass = variant { Cryptocurrency; FiatCurrency };
 type AssetLedger = record {
   ledger_id : principal;
@@ -21,8 +26,10 @@ type BiasDetails = record {
   total_reserve : nat;
 };
 type ClosePositionParams = record {
-  acceptable_price_limit : nat;
-  position_id : nat64;
+  acceptablePriceLimit : nat;
+  owner : principal;
+  positionId : nat64;
+  marketIndex : nat64;
 };
 type ClosePositionResult = variant {
   Failed;
@@ -30,80 +37,96 @@ type ClosePositionResult = variant {
   Settled : record { returns : nat };
 };
 type CreateMarketParams = record {
-  shorts_borrowing_exponent_factor : nat;
-  longs_base_borrowing_factor : nat;
-  init_state : MarketState;
-  funding_exponent_factor : nat;
-  longs_borrowing_exponent_factor : nat;
-  shorts_base_borrowing_factor : nat;
-  asset_pricing_details : AssetPricingDetails;
-  shorts_max_reserve_factor : nat;
-  funding_factor : nat;
-  longs_max_reserve_factor : nat;
+  shortsMaxReserveFactor : nat;
+  longsMaxReserveFactor : nat;
+  fundingFactor : nat;
+  fundingExponentFactor : nat;
+  longsBorrowingExponentFactor : nat;
+  shortsBorrowingExponentFactor : nat;
+  shortsBaseBorrowingFactor : nat;
+  longsBaseBorrowingFactor : nat;
+  initState : MarketState;
+  assetPricingDetails : AssetPricingDetails;
 };
-type DepositParams = record { block_index : opt nat64; amount : nat };
+type DepositParams = record { blockIndex : opt nat64; amount : nat };
 type FailureReason = variant { PriceLimitExceeded; InsufficientBalance; Other };
-type FundingManager = record {
+type FundingState = record {
+  current_funding_factor_ps : int;
   threshold_stable_funding : nat;
   last_time_updated : nat64;
   funding_increase_factor_ps : nat;
   funding_exponent_factor : nat;
   funding_decrease_factor_ps : nat;
-  next_funding_factor_ps : int;
   threshold_decrease_funding : nat;
   max_funding_factor_ps : nat;
   min_funding_factor_ps : nat;
   funding_factor : nat;
 };
+type GetPositionCurrentDetails = record {
+  currentCollateral : nat;
+  isLong : bool;
+  positionSize : nat;
+  liquidationPrice : nat;
+  netBorrowingFee : nat;
+  netFundingFee : int;
+};
 type HouseDetails = record {
+  position_fees_acccumulated : nat;
   house_asset_ledger : AssetLedger;
   house_asset_pricing_details : AssetPricingDetails;
   execution_fee : nat;
+  execution_fees_accumulated : nat;
 };
-type HouseLiquidityManager = record {
+type HouseLiquidityState = record {
+  current_house_bad_debt : nat;
   free_liquidity : nat;
   liquidation_factor : nat;
   current_shorts_reserve : nat;
-  total_liquidity_tokens_minted : nat;
+  total_liquidity_shares : nat;
   current_longs_reserve : nat;
   last_time_since_borrow_fees_collected : nat64;
   current_borrow_fees_owed : nat;
-  bad_debt : nat;
   shorts_max_reserve_factor : nat;
   longs_max_reserve_factor : nat;
   current_net_debt : nat;
   total_deposit : nat;
 };
+type InitParams = record {
+  admin : principal;
+  house_asset_ledger : AssetLedger;
+  house_asset_pricing_details : AssetPricingDetails;
+  execution_fee : nat;
+};
 type LiquidityOperationResult = variant {
-  Failed;
+  Failed : text;
   Waiting;
   Settled : record { amount_out : nat };
 };
 type MarketDetails = record {
+  liquidity_state : HouseLiquidityState;
   bias_tracker : Bias;
   state : MarketState;
-  pricing_manager : PricingManager;
-  funding_manager : FundingManager;
+  pricing_manager : PricingState;
+  funding_state : FundingState;
   index_asset_pricing_details : AssetPricingDetails;
-  liquidity_manager : HouseLiquidityManager;
 };
 type MarketState = record {
-  liquidation_factor : nat;
-  max_leverage_factor : nat;
-  max_reserve_factor : nat;
+  liquidationFactor : nat;
+  maxReserveFactor : nat;
+  maxLeverageFactor : nat;
 };
 type OpenPositionParams = record {
-  acceptable_price_limit : nat;
+  acceptablePriceLimit : nat;
   owner : principal;
   long : bool;
   collateral : nat;
-  reserve_factor : nat;
-  market_index : nat64;
-  leverage_factor : nat;
+  reserveFactor : nat;
+  marketIndex : nat64;
+  leverageFactor : nat;
 };
 type OpenPositioninMarketResult = variant {
   Failed : record { reason : FailureReason };
-  Waiting : record { params : OpenPositionParams };
+  Waiting;
   Settled : record { position : PositionDetails };
 };
 type PositionDetails = record {
@@ -116,32 +139,390 @@ type PositionDetails = record {
   pre_cummulative_borrowing_factor : nat;
   units : nat;
 };
-type PricingManager = record {
+type PricingState = record {
   negative_price_impact_factor : nat;
+  last_time_updated : nat64;
   price_impact_exponent_factor : nat;
   positive_price_impact_factor : nat;
   price : nat;
 };
-type RemoveLiquidityFromMarketParams = record {
+type QueryMarketDetailsResult = record {
+  shortsReserveAvailableLiquidity : nat;
+  shortsTotalOpenInterest : nat;
+  longsReserveAvailableLiquidity : nat;
+  currentFundingFactorPerHourShort : int;
+  longsTotalOpenInterest : nat;
+  currentFundingFactorPerHourLong : int;
+};
+type QueryPositionDetailsResult = record {
+  positionCurrentDetails : GetPositionCurrentDetails;
+  positionId : nat64;
+};
+type RemoveLiquidityParams = record {
   min_amount_out : nat;
+  owner : principal;
   amount_in : nat;
+  market_index : nat64;
 };
 type WithdrawParams = record { amount : nat };
-service : (HouseDetails) -> {
-  addLiquidity : (nat64, AddLiquidityToMarketParams) -> (
-      LiquidityOperationResult,
-    );
-  add_market : (CreateMarketParams, AssetPricingDetails, MarketState) -> ();
+service : (InitParams) -> {
+  // Adds liquidity to a specific market in the clearing house.
+  // 
+  // This function allows users to deposit assets into a market's liquidity pool,
+  // receiving liquidity shares in return. The operation may be executed immediately
+  // if price data is current, or queued for later execution if price updates are needed.
+  // 
+  // # Parameters
+  // 
+  // * `params` - [`AddLiquidityToMarketParams`] containing:
+  // - `market_index` (u64): The unique identifier of the target market
+  // - `depositor` (Principal): The principal ID of the user adding liquidity
+  // - `amount` (u128): Quote asset amount to deposit (20-decimal precision)
+  // - `min_amount_out` (u128): Minimum market shares expected in return (slippage protection; shares are distinct from quote asset and use 20-decimal precision)
+  // 
+  // # Returns
+  // 
+  // Returns [`LiquidityOperationResult`] which can be:
+  // - `Settled { amount_out }`: Successfully added liquidity, returns actual shares received
+  // - `Waiting`: Operation queued due to stale price data, will execute when price updates
+  // - `Failed`: Operation failed due to insufficient balance or invalid parameters
+  // 
+  // # Security Notes
+  // 
+  // - **Caller Verification**: The `depositor` parameter must match the message caller (`msg_caller()`)
+  // to prevent unauthorized operations
+  // - **Balance Check**: User must have sufficient balance to cover both the deposit amount
+  // and the execution fee
+  // - **Execution Fee**: A small execution fee is deducted from the user's balance
+  // 
+  // # Price Update Handling
+  // 
+  // If the market's price data is stale (beyond the allowed update interval), the operation
+  // is queued as a price waiting operation and will be executed automatically when fresh
+  // price data becomes available.
+  // 
+  // # Units
+  // 
+  // - `amount` is in quote asset units (20-decimal precision)
+  // - `min_amount_out` is in market share units (20-decimal precision)
+  // 
+  // # Example Usage
+  // 
+  // ```rust
+  // let params = AddLiquidityToMarketParams {
+  // market_index: 0,
+  // depositor: msg_caller(),
+  // amount: 10000000000000000000000, // 1.0 unit with 20 decimal places precision
+  // min_amount_out: 9500000000000000000000, // 0.95 units with 5% slippage tolerance
+  // };
+  // 
+  // let result = add_liquidity(params);
+  // match result {
+  // LiquidityOperationResult::Settled { amount_out } => {
+  // // Successfully added liquidity, received `amount_out` shares
+  // },
+  // LiquidityOperationResult::Waiting => {
+  // // Operation queued, will execute when price updates
+  // },
+  // LiquidityOperationResult::Failed => {
+  // // Operation failed, check balance and parameters
+  // }
+  // }
+  // ```
+  addLiquidity : (AddLiquidityParams) -> (LiquidityOperationResult);
+  // Closes an existing trading position in a specific market.
+  // 
+  // This function allows users to close their existing trading positions and receive
+  // the settlement amount. The operation may be executed immediately if price data is
+  // current, or queued for later execution if price updates are needed.
+  // 
+  // # Parameters
+  // 
+  // * `params` - [`ClosePositionParams`] containing:
+  // - `market_index` (u64): The unique identifier of the market containing the position
+  // - `owner` (Principal): The principal ID of the position owner
+  // - `position_id` (u64): The unique identifier of the position to close
+  // - `acceptable_price_limit` (u128): Maximum acceptable price for closing (with 20 decimal places precision)
+  // 
+  // # Returns
+  // 
+  // Returns [`ClosePositionResult`] which can be:
+  // - `Settled { returns }`: Successfully closed position, returns settlement amount
+  // - `Waiting`: Operation queued due to stale price data, will execute when price updates
+  // - `Failed`: Operation failed due to invalid position or other errors
+  // 
+  // # Security Notes
+  // 
+  // - **Caller Verification**: The `owner` parameter must match the message caller (`msg_caller()`)
+  // to prevent unauthorized position closure
+  // - **Position Ownership**: Only the position owner can close their own positions
+  // - **Balance Update**: Settlement amount is added to the user's balance upon successful closure
+  // 
+  // # Price Update Handling
+  // 
+  // If the market's price data is stale (beyond the allowed update interval), the operation
+  // is queued as a price waiting operation and will be executed automatically when fresh
+  // price data becomes available.
+  // 
+  // # Example Usage
+  // 
+  // ```rust
+  // let params = ClosePositionParams {
+  // market_index: 0,
+  // owner: msg_caller(),
+  // position_id: 12345,
+  // acceptable_price_limit: 2000000000000000000000, // 2.0 units max price with 20 decimal places
+  // };
+  // 
+  // let result = close_position(params);
+  // match result {
+  // ClosePositionResult::Settled { returns } => {
+  // // Successfully closed position, received settlement amount
+  // },
+  // ClosePositionResult::Waiting => {
+  // // Operation queued, will execute when price updates
+  // },
+  // ClosePositionResult::Failed => {
+  // // Operation failed, check position ID and ownership
+  // }
+  // }
+  // ```
   closePosition : (ClosePositionParams) -> (ClosePositionResult);
-  deposit : (DepositParams) -> (bool);
+  collectBorrowFees : (nat64) -> ();
+  createNewMarket : (CreateMarketParams) -> (nat64);
+  // Deposits assets into a user's account in the clearing house.
+  // 
+  // This function allows users to deposit assets from the house asset ledger into their
+  // account balance. The deposit is processed asynchronously and requires a valid block
+  // index from the ledger for verification.
+  // 
+  // # Parameters
+  // 
+  // * `params` - [`DepositParams`] containing:
+  // - `amount` (u128): Quote asset amount to deposit (20-decimal precision)
+  // - `block_index` (Option<BlockIndex>): Optional block index for transaction verification
+  // 
+  // # Returns
+  // 
+  // Returns `bool` indicating success:
+  // - `true`: Deposit was successful and user balance was updated
+  // - `false`: Deposit failed, user balance remains unchanged
+  // 
+  // # Security Notes
+  // 
+  // - **Caller Verification**: The function uses `msg_caller()` to identify the depositor
+  // - **Ledger Verification**: Uses the house asset ledger to verify the deposit transaction
+  // - **Balance Update**: User balance is only updated if the ledger transaction succeeds
+  // 
+  // # Process Flow
+  // 
+  // 1. Identifies the caller as the depositor
+  // 2. Retrieves the house asset ledger
+  // 3. Sends the deposit transaction to the ledger
+  // 4. Updates user balance only if the transaction succeeds
+  // 
+  // # Example Usage
+  // 
+  // ```rust
+  // let params = DepositParams {
+  // amount: 10000000000000000000000, // 1.0 unit with 20 decimal places precision
+  // block_index: Some(12345), // Optional block index for verification
+  // };
+  // 
+  // let success = deposit_into_account(params).await;
+  // if success {
+  // // Deposit successful, user balance updated
+  // } else {
+  // // Deposit failed, check ledger transaction
+  // }
+  // ```
+  depositIntoAccount : (DepositParams) -> (bool);
+  getAllUserPositionsInMarket : (principal, nat64) -> (
+      text,
+      text,
+      vec QueryPositionDetailsResult,
+    ) query;
+  getHouseDetails : () -> (HouseDetails) query;
   getUserBalance : (principal) -> (nat) query;
   getUserMarketLiquidityShares : (principal, nat64) -> (nat) query;
   get_market_details : (nat64) -> (MarketDetails) query;
-  get_markets_count : () -> (nat64) query;
+  get_markets_count_plus_1 : () -> (nat64) query;
+  // Opens a new trading position in a specific market.
+  // 
+  // This function allows users to open leveraged trading positions in markets. The operation
+  // may be executed immediately if price data is current, or queued for later execution if
+  // price updates are needed. The position is created with specified collateral and leverage.
+  // 
+  // # Parameters
+  // 
+  // * `params` - [`OpenPositionParams`] containing:
+  // - `owner` (Principal): The principal ID of the position owner
+  // - `long` (bool): True for long position, false for short position
+  // - `market_index` (u64): The unique identifier of the target market
+  // - `collateral` (u128): Collateral amount in quote asset (20-decimal precision)
+  // - `leverage_factor` (u128): The leverage multiplier (with 20 decimal places precision)
+  // - `acceptable_price_limit` (u128): Maximum acceptable price for the position (with 20 decimal places precision)
+  // - `reserve_factor` (u128): Reserve factor for risk management (with 20 decimal places precision)
+  // 
+  // # Returns
+  // 
+  // Returns [`OpenPositioninMarketResult`] which can be:
+  // - `Settled { position }`: Successfully opened position, returns position details
+  // - `Waiting`: Operation queued due to stale price data, will execute when price updates
+  // - `Failed { reason }`: Operation failed with specific reason (InsufficientBalance, PriceLimitExceeded, Other)
+  // 
+  // # Security Notes
+  // 
+  // - **Caller Verification**: The `owner` parameter must match the message caller (`msg_caller()`)
+  // to prevent unauthorized position creation
+  // - **Balance Check**: User must have sufficient balance to cover both the collateral amount
+  // and the execution fee
+  // - **Execution Fee**: Deducted in quote asset from the user's balance
+  // 
+  // # Price Update Handling
+  // 
+  // If the market's price data is stale (beyond the allowed update interval), the operation
+  // is queued as a price waiting operation and will be executed automatically when fresh
+  // price data becomes available.
+  // 
+  // # Example Usage
+  // 
+  // ```rust
+  // let params = OpenPositionParams {
+  // owner: msg_caller(),
+  // long: true, // Long position
+  // market_index: 0,
+  // collateral: 1000000000000000000000, // 0.1 units collateral with 20 decimal places
+  // leverage_factor: 10000000000000000000000, // 10x leverage with 20 decimal places
+  // acceptable_price_limit: 2000000000000000000000, // 2.0 units max price with 20 decimal places
+  // reserve_factor: 500000000000000000000, // 0.05 units reserve with 20 decimal places
+  // };
+  // 
+  // let result = open_position(params);
+  // match result {
+  // OpenPositioninMarketResult::Settled { position } => {
+  // // Successfully opened position, received position details
+  // },
+  // OpenPositioninMarketResult::Waiting => {
+  // // Operation queued, will execute when price updates
+  // },
+  // OpenPositioninMarketResult::Failed { reason } => {
+  // // Operation failed, check reason and user balance
+  // }
+  // }
+  // ```
   openPosition : (OpenPositionParams) -> (OpenPositioninMarketResult);
-  removeLiquidity : (nat64, RemoveLiquidityFromMarketParams) -> (
-      LiquidityOperationResult,
-    );
-  setAdmin : (principal) -> ();
-  withdraw : (WithdrawParams) -> (bool);
+  queryMarketDetails : (nat64) -> (QueryMarketDetailsResult) query;
+  // Removes liquidity from a specific market in the clearing house.
+  // 
+  // This function allows users to withdraw their liquidity shares from a market's
+  // liquidity pool, receiving the underlying assets in return. The operation may be
+  // executed immediately if price data is current, or queued for later execution if
+  // price updates are needed.
+  // 
+  // # Parameters
+  // 
+  // * `params` - [`RemoveLiquidityFromMarketParams`] containing:
+  // - `market_index` (u64): The unique identifier of the target market
+  // - `owner` (Principal): The principal ID of the liquidity provider
+  // - `amount_in` (u128): Liquidity shares to remove (20-decimal precision; shares are distinct from quote asset)
+  // - `min_amount_out` (u128): Minimum quote asset expected in return (slippage protection; 20-decimal precision)
+  // 
+  // # Returns
+  // 
+  // Returns [`LiquidityOperationResult`] which can be:
+  // - `Settled { amount_out }`: Successfully removed liquidity, returns actual assets received
+  // - `Waiting`: Operation queued due to stale price data, will execute when price updates
+  // - `Failed`: Operation failed due to insufficient shares or invalid parameters
+  // 
+  // # Security Notes
+  // 
+  // - **Caller Verification**: The `owner` parameter must match the message caller (`msg_caller()`)
+  // to prevent unauthorized liquidity removal
+  // - **Share Balance Check**: User must have sufficient liquidity shares in the specified market
+  // - **Balance Update**: Received assets are added to the user's balance upon successful removal
+  // 
+  // # Price Update Handling
+  // 
+  // If the market's price data is stale (beyond the allowed update interval), the operation
+  // is queued as a price waiting operation and will be executed automatically when fresh
+  // price data becomes available.
+  // 
+  // # Units
+  // 
+  // - `amount_in` is specified in market share units (20-decimal precision)
+  // - `min_amount_out` is specified in quote asset units (20-decimal precision)
+  // 
+  // # Example Usage
+  // 
+  // ```rust
+  // let params = RemoveLiquidityFromMarketParams {
+  // market_index: 0,
+  // owner: msg_caller(),
+  // amount_in: 1000000000000000000000, // 0.1 units of liquidity shares with 20 decimal places
+  // min_amount_out: 950000000000000000000, // 0.095 units minimum assets with 5% slippage tolerance
+  // };
+  // 
+  // let result = remove_liquidity(params).await;
+  // match result {
+  // LiquidityOperationResult::Settled { amount_out } => {
+  // // Successfully removed liquidity, received `amount_out` assets
+  // },
+  // LiquidityOperationResult::Waiting => {
+  // // Operation queued, will execute when price updates
+  // },
+  // LiquidityOperationResult::Failed => {
+  // // Operation failed, check liquidity shares and parameters
+  // }
+  // }
+  // ```
+  removeLiquidity : (RemoveLiquidityParams) -> (LiquidityOperationResult);
+  settleFundingFees : (nat64) -> ();
+  // Withdraws assets from a user's account to the house asset ledger.
+  // 
+  // This function allows users to withdraw assets from their account balance in the
+  // clearing house to the house asset ledger. The withdrawal is processed asynchronously
+  // and includes automatic refund protection if the ledger transaction fails.
+  // 
+  // # Parameters
+  // 
+  // * `params` - [`WithdrawParams`] containing:
+  // - `amount` (u128): Quote asset amount to withdraw (20-decimal precision)
+  // 
+  // # Returns
+  // 
+  // Returns `bool` indicating success:
+  // - `true`: Withdrawal was successful and assets were sent to the ledger
+  // - `false`: Withdrawal failed, user balance was refunded
+  // 
+  // # Security Notes
+  // 
+  // - **Caller Verification**: The function uses `msg_caller()` to identify the withdrawer
+  // - **Balance Check**: User must have sufficient balance to cover the withdrawal amount
+  // - **Refund Protection**: If the ledger transaction fails, the user's balance is automatically refunded
+  // - **Atomic Operation**: Balance is deducted before sending to ledger, ensuring consistency
+  // 
+  // # Process Flow
+  // 
+  // 1. Identifies the caller as the withdrawer
+  // 2. Validates user has sufficient balance
+  // 3. Deducts the amount from user's balance
+  // 4. Sends the withdrawal transaction to the house asset ledger
+  // 5. If ledger transaction fails, refunds the user's balance
+  // 
+  // # Example Usage
+  // 
+  // ```rust
+  // let params = WithdrawParams {
+  // amount: 10000000000000000000000, // 1.0 unit with 20 decimal places precision
+  // };
+  // 
+  // let success = withdraw_from_account(params).await;
+  // if success {
+  // // Withdrawal successful, assets sent to ledger
+  // } else {
+  // // Withdrawal failed, balance was refunded
+  // }
+  // ```
+  withdrawFromAccount : (WithdrawParams) -> (bool);
 }

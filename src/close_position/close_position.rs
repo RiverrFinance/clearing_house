@@ -3,10 +3,8 @@ use crate::close_position::close_position_result::ClosePositionResult;
 use crate::close_position::close_position_params::ClosePositionParams;
 use crate::constants::CLOSE_POSITION_PRIORITY_INDEX;
 use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation;
-use crate::pricing_update_management::price_waiting_operation_utils::{
-    is_within_price_update_interval, put_price_waiting_operation,
-};
-use crate::stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME;
+use crate::pricing_update_management::price_waiting_operation_utils::put_price_waiting_operation;
+use crate::stable_memory::MARKETS_LIST;
 use crate::user::balance_utils::update_user_balance;
 use crate::user::user_query::get_user_position_details;
 use ic_cdk::{api::msg_caller, update};
@@ -122,21 +120,15 @@ pub fn close_position(params: ClosePositionParams) -> ClosePositionResult {
 /// which includes proper caller verification and price waiting operation handling.
 pub fn _close_position(params: &ClosePositionParams) -> ClosePositionResult {
     let (market_index, position) = get_user_position_details(params.owner, params.position_id);
-    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
-        let (mut market, last_price_update_time) =
-            reference.get(market_index).expect("Market does not exist");
-
-        // check timer
-        if is_within_price_update_interval(last_price_update_time) == false {
-            return ClosePositionResult::Waiting;
-        }
+    MARKETS_LIST.with_borrow_mut(|reference| {
+        let mut market = reference.get(market_index).expect("Market does not exist");
 
         let result = market.close_position_in_market(position, params.acceptable_price_limit);
 
         if let ClosePositionResult::Settled { returns } = result {
             update_user_balance(position.owner, returns, true);
 
-            reference.set(market_index, &(market, last_price_update_time));
+            reference.set(market_index, &market);
         }
 
         return result;

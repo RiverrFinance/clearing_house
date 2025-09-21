@@ -1,6 +1,8 @@
+use crate::asset_management::AssetLedger;
 use crate::stable_memory::{ADMIN, HOUSE_SETTINGS};
-use candid::Principal;
+use candid::{CandidType, Principal};
 use ic_cdk::{export_candid, init};
+use serde::Deserialize;
 
 use crate::admin_roles::create_market::CreateMarketParams;
 use crate::house_settings::HouseDetails;
@@ -13,6 +15,7 @@ use close_position::close_position_result::ClosePositionResult;
 use deposit::deposit_params::DepositParams;
 use market::functions::open_position_in_market::OpenPositioninMarketResult;
 use market::market_details::LiquidityOperationResult;
+use market::market_details::MarketDetails;
 use open_position::open_position_params::OpenPositionParams;
 use query::market_details_query::QueryMarketDetailsResult;
 use query::position_query::QueryPositionDetailsResult;
@@ -26,6 +29,7 @@ pub mod asset_management;
 pub mod close_position;
 pub mod constants;
 pub mod deposit;
+pub mod events;
 pub mod house_settings;
 pub mod market;
 pub mod math;
@@ -48,6 +52,9 @@ pub use add_liquidity::add_liquidity::add_liquidity;
 pub use admin_roles::create_market::create_new_market;
 pub use close_position::close_position::close_position;
 pub use deposit::deposit::deposit_into_account;
+pub use house_settings::get_house_details;
+pub use market::query_utils::get_market_details;
+pub use market::query_utils::get_markets_count_plus_1;
 pub use open_position::open_position::open_position;
 pub use query::market_details_query::query_market_details;
 pub use query::position_query::get_all_user_positions_in_market;
@@ -56,14 +63,34 @@ pub use withdraw::withdraw::withdraw_from_account;
 
 // Query functions
 
-pub use market::query_utils::get_market_details;
 pub use user::balance_utils::get_user_balance;
 
+#[derive(Deserialize, Clone, CandidType)]
+struct InitParams {
+    admin: Principal,
+    house_asset_ledger: AssetLedger,
+    house_asset_pricing_details: AssetPricingDetails,
+    execution_fee: u128,
+}
+
 #[init]
-fn init(admin: Principal, init_details: HouseDetails) {
+fn init(init_details: InitParams) {
+    let InitParams {
+        admin,
+        house_asset_ledger,
+        house_asset_pricing_details,
+        execution_fee,
+    } = init_details;
     ADMIN.with_borrow_mut(|reference| reference.set(admin));
 
-    HOUSE_SETTINGS.with_borrow_mut(|reference| reference.set(init_details));
+    HOUSE_SETTINGS.with_borrow_mut(|reference| {
+        reference.set(HouseDetails {
+            house_asset_ledger,
+            house_asset_pricing_details,
+            execution_fee,
+            ..HouseDetails::default()
+        })
+    });
 }
 
 // Export Candid macro - this generates the Candid file automatically

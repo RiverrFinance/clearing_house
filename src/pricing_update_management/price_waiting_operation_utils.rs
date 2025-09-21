@@ -20,7 +20,7 @@ pub fn put_price_waiting_operation(
     market_index: u64,
     operation_priority_index: u8,
     operation: PriceWaitingOperation,
-) {
+) -> usize {
     let new_timer = ic_cdk_timers::set_timer(Duration::from_millis(500), move || {
         ic_cdk::futures::spawn(async move {
             schedule_execution_of_price_waiting_operations(market_index).await;
@@ -42,7 +42,9 @@ pub fn put_price_waiting_operation(
             .get_mut(&operation_priority_index)
             .unwrap_or(&mut Vec::new())
             .push(operation);
-    });
+
+        return operations.len() - 1;
+    })
 }
 
 pub async fn schedule_execution_of_price_waiting_operations(market_index: u64) {

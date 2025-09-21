@@ -1,18 +1,23 @@
 use candid::CandidType;
+use ic_cdk::api::time;
 use serde::{Deserialize, Serialize};
 
-use crate::math::math::{apply_exponent, apply_precision, diff};
+use crate::{
+    math::math::{apply_exponent, apply_precision, diff},
+    pricing_update_management::price_waiting_operation_utils::is_within_price_update_interval,
+};
 
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 #[derive(Default, Deserialize, Copy, Clone, CandidType, Serialize)]
-pub struct PricingManager {
+pub struct PricingState {
+    pub last_time_updated: u64,
     pub price: u128,
     pub price_impact_exponent_factor: u128,
     pub positive_price_impact_factor: u128,
     pub negative_price_impact_factor: u128,
 }
 
-impl PricingManager {
+impl PricingState {
     // pub fn get_price_within_interval(&self, interval: u64) -> Option<u128> {
     //     if self.last_fetched + interval >= now() {
     //         return Some(self.price);
@@ -21,12 +26,17 @@ impl PricingManager {
     //     }
     // }
 
-    pub fn get_price(&self) -> u128 {
-        self.price
+    pub fn get_price(&self) -> Option<u128> {
+        if is_within_price_update_interval(self.last_time_updated) {
+            return Some(self.price);
+        } else {
+            return None;
+        }
     }
 
     pub fn update_price(&mut self, price: u128) {
         self.price = price;
+        self.last_time_updated = time()
     }
     // Price impact is calculated as:
     //

@@ -40,10 +40,11 @@ impl MarketDetails {
         params: OpenPositionParams,
     ) -> OpenPositioninMarketResult {
         // Gets price within the required time interval
-        let price_update = self.pricing_manager.get_price();
+        let active_price = self.pricing_manager.get_price();
+
         //  .get_price_within_interval(MAX_ALLOWED_PRICE_CHANGE_INTERVAL);
 
-        self._open_position_in_market_with_price(params, price_update)
+        self._open_position_in_market_with_price(params, active_price)
     }
     ///
     /// Fail checks condition
@@ -65,7 +66,7 @@ impl MarketDetails {
     pub fn _open_position_in_market_with_price(
         &mut self,
         params: OpenPositionParams,
-        price: u128,
+        active_price: Option<u128>,
     ) -> OpenPositioninMarketResult {
         let OpenPositionParams {
             long,
@@ -76,6 +77,10 @@ impl MarketDetails {
             owner,
             ..
         } = params;
+
+        let Some(price) = active_price else {
+            return OpenPositioninMarketResult::Waiting;
+        };
 
         if (long && price > acceptable_price_limit) || ((!long) && price < acceptable_price_limit) {
             return OpenPositioninMarketResult::Failed {
@@ -104,7 +109,7 @@ impl MarketDetails {
         let house_value_without_pnl = i128::max(0, self.liquidity_state.static_value()) as u128;
 
         let Self {
-            liquidity_state: liquidity_manager,
+            liquidity_state,
             bias_tracker,
             ..
         } = self;
@@ -118,7 +123,7 @@ impl MarketDetails {
             longs_max_reserve_factor,
             mut total_deposit,
             ..
-        } = *liquidity_manager;
+        } = *liquidity_state;
 
         let (max_reserve_for_bias, current_reserve_for_bias) = if long {
             (
@@ -149,13 +154,13 @@ impl MarketDetails {
         // increase total deposit
         total_deposit += collateral;
 
-        *liquidity_manager = HouseLiquidityState {
+        *liquidity_state = HouseLiquidityState {
             free_liquidity,
             current_longs_reserve,
             current_shorts_reserve,
             current_net_debt,
             total_deposit,
-            ..*liquidity_manager
+            ..*liquidity_state
         };
 
         let position_open_interest = debt + collateral;

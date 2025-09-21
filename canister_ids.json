@@ -1,3 +1,8 @@
 {
-  "clearing_house": {}
+  "clearing_house": {
+    "ic": "5ch5r-aiaaa-aaaao-a4pma-cai"
+  },
+  "minter": {
+    "ic": "ml52i-qqaaa-aaaar-qaaba-cai"
+  }
 }

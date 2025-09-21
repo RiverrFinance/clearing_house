@@ -6,7 +6,8 @@ use ic_cdk_timers::TimerId;
 
 use crate::constants::{
     _ADMIN_MEMORY_ID, _BALANCES_MEMORY_ID, _HOUSE_DETAILS_MEMORY_ID,
-    _MARKET_LIQUIDTY_SHARES_MEMORY_ID, _MARKETS_MEMORY_ID,
+    _MARKET_LIQUIDTY_SHARES_MEMORY_ID, _MARKET_SHARE_USER_BALANCES_MEMORY_ID, _MARKETS_MEMORY_ID,
+    _POSITIONS_MEMORY_ID,
 };
 
 use crate::house_settings::HouseDetails;
@@ -20,39 +21,37 @@ use ic_stable_structures::{DefaultMemoryImpl, StableBTreeMap, StableCell, Stable
 type Memory = VirtualMemory<DefaultMemoryImpl>;
 
 thread_local! {
-      static MEMORY_MANAGER:RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default())) ;
+  static MEMORY_MANAGER:RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default())) ;
+}
 
+thread_local! {
     pub  static ADMIN:RefCell<StableCell<Principal,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
         tag.get(_ADMIN_MEMORY_ID)
       }),Principal::anonymous()));
 
-    pub static HOUSE_SETTINGS:RefCell<StableCell<HouseDetails,Memory>> = RefCell::new(StableCell::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_HOUSE_DETAILS_MEMORY_ID)
-      }), HouseDetails::default()));
+    pub static HOUSE_SETTINGS:RefCell<StableCell<HouseDetails,Memory>> = MEMORY_MANAGER.with_borrow(|tag|{
+      RefCell::new(StableCell::init(tag.get(_HOUSE_DETAILS_MEMORY_ID), HouseDetails::default()))});
 
-    pub static MARKETS_WITH_LAST_PRICE_UPDATE_TIME:RefCell<StableVec<(MarketDetails,u64),Memory>> = RefCell::new(StableVec::new(MEMORY_MANAGER.with(|s|{
-        s.borrow().get(_MARKETS_MEMORY_ID)
-      })));
+    pub static MARKETS_LIST:RefCell<StableVec<MarketDetails,Memory>> = MEMORY_MANAGER.with_borrow(|tag|{
+      RefCell::new(StableVec::init(tag.get(_MARKETS_MEMORY_ID)))});
 
-     pub static USERS_BALANCES:RefCell<StableBTreeMap<Principal,u128,Memory>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_BALANCES_MEMORY_ID)
-      })));
+    pub static USERS_BALANCES:RefCell<StableBTreeMap<Principal,u128,Memory>> =MEMORY_MANAGER.with_borrow(|tag|{
+       RefCell::new(StableBTreeMap::init(tag.get(_BALANCES_MEMORY_ID)))});
 
-      pub static  USER_MARKET_LIQUIDTY_SHARES_BALANCES:RefCell<StableBTreeMap<(Principal,u64),u128,Memory>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with_borrow(|tag|{
-        tag.get(_MARKET_LIQUIDTY_SHARES_MEMORY_ID)
-      })));
+    pub static MARKET_SHARE_USER_BALANCES:RefCell<StableBTreeMap<(Principal,u64),u128,Memory>> = MEMORY_MANAGER.with_borrow(|tag|{
+        RefCell::new(StableBTreeMap::init(tag.get(_MARKET_SHARE_USER_BALANCES_MEMORY_ID)))});
+
+    pub static  USER_MARKET_LIQUIDTY_SHARES_BALANCES:RefCell<StableBTreeMap<(Principal,u64),u128,Memory>> = MEMORY_MANAGER.with_borrow(|tag|{
+        RefCell::new(StableBTreeMap::init(tag.get(_MARKET_LIQUIDTY_SHARES_MEMORY_ID)))});
 
 
     /// User amd TimeStamp
 
-    pub static USERS_POSITIONS:RefCell<StableBTreeMap<(Principal,u64),(u64,PositionDetails),Memory>> = RefCell::new(StableBTreeMap::new(MEMORY_MANAGER.with(|s|{
-        s.borrow().get(_MARKETS_MEMORY_ID)
-      })));
+    pub static USERS_POSITIONS:RefCell<StableBTreeMap<(Principal,u64),(u64,PositionDetails),Memory>> = MEMORY_MANAGER.with_borrow(|tag|{
+      RefCell::new(StableBTreeMap::init(tag.get(_POSITIONS_MEMORY_ID)))});
 
 
     pub  static MARKET_PRICE_WAITING_OPERATION:RefCell<HashMap<u64,(TimerId,HashMap<u8,Vec< PriceWaitingOperation> >)>> = RefCell::new(HashMap::new());
-    pub static MARKET_SHARE_USER_BALANCES:RefCell<HashMap<(Principal,u64),u128>> = RefCell::new(HashMap::new());
-
 
     pub static MARKET_TIMER_MANAGER:RefCell<HashMap<u64,u64>> = RefCell::new(HashMap::new());
 

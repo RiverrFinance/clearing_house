@@ -2,4 +2,5 @@
 src/declarations
 .env
 .dfx
-
+dist/
+node_modules/

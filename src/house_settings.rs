@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use candid::CandidType;
+use ic_cdk::query;
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,11 @@ pub struct HouseDetails {
     pub execution_fee: u128,
     pub execution_fees_accumulated: u128,
     pub position_fees_acccumulated: u128,
+}
+
+#[query(name = "getHouseDetails")]
+pub fn get_house_details() -> HouseDetails {
+    HOUSE_SETTINGS.with_borrow(|reference| reference.get().clone())
 }
 
 pub fn get_position_fees_acccumulated() -> u128 {

@@ -16,14 +16,6 @@ pub fn close_position_with_net_negative_funding(
 
     let mut net_free_liquidity = free_liquidity;
 
-    // if pnl is negative
-    // the amount to add to free_liquidity is
-    // let position_value_without_funding_pay = bound_below_signed(
-    //     open_interest as i128 + position_pnl
-    //         - (open_interest + net_borrowing_fee + self.debt) as i128,
-    //     0,
-    // );
-
     let position_value_without_funding_pay = bound_below_signed(
         open_interest as i128 + position_pnl - (net_borrowing_fee + debt) as i128,
         0,

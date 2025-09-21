@@ -16,11 +16,11 @@ enum FundingChangeType {
 pub struct FundingState {
     /// Last time updated timetamp
     pub last_time_updated: u64,
-    /// Next funding factor Per Second
+    /// Current funding factor Per Second
     ///  to be paid after elapsed duration by either long or short
     /// Positive value for long paying shorts and
-    /// negative value for shorts paying longg
-    pub next_funding_factor_ps: i128,
+    /// negative value for shorts paying long
+    pub current_funding_factor_ps: i128,
 
     /// Min funding factor per second
     /// Serves as a lower threshold for funding factor per second
@@ -42,7 +42,7 @@ pub struct FundingState {
 
 impl FundingState {
     pub fn current_funding_factor_ps(&self) -> i128 {
-        return self.next_funding_factor_ps;
+        return self.current_funding_factor_ps;
     }
 
     /// Update FUnding factor per second
@@ -71,7 +71,7 @@ impl FundingState {
         let long_short_diff_mag = long_short_diff.abs() as u128;
 
         if long_short_diff == 0 {
-            self.next_funding_factor_ps = 0
+            self.current_funding_factor_ps = 0
         }
 
         // (imbalance) ^ (funding_expoenent_factor)
@@ -90,7 +90,7 @@ impl FundingState {
                 funding_factor_ps = max_funding_factor_ps;
             }
             let sign = long_short_diff.abs() / long_short_diff;
-            self.next_funding_factor_ps = funding_factor_ps as i128 * sign;
+            self.current_funding_factor_ps = funding_factor_ps as i128 * sign;
 
             return;
         }
@@ -98,7 +98,7 @@ impl FundingState {
         // current funding factor_ps
         // if positive then longs pay shorts
         // if ppsitive then shorts pay long
-        let current_funding_factor_ps = self.next_funding_factor_ps;
+        let current_funding_factor_ps = self.current_funding_factor_ps;
 
         let current_funding_factor_ps_mag = current_funding_factor_ps.abs() as u128;
 
@@ -159,7 +159,7 @@ impl FundingState {
             max_funding_factor_ps,
         );
 
-        self.next_funding_factor_ps = next_saved_funding_factor_ps;
+        self.current_funding_factor_ps = next_saved_funding_factor_ps;
         self.last_time_updated = time();
     }
 

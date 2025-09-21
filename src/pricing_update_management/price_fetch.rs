@@ -1,18 +1,17 @@
 use std::str::FromStr;
 
 use candid::{CandidType, Principal};
-use ic_cdk::api::time;
+
 use ic_cdk::call::Call;
 use serde::{Deserialize, Serialize};
 
 use crate::house_settings::get_house_asset_pricing_details;
-use crate::stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME;
+use crate::stable_memory::MARKETS_LIST;
 
 const XRC_ID: &str = "uf6dk-hyaaa-aaaaq-qaaaq-cai";
 
 pub async fn update_price(market_index: u64) {
-    let (mut market, _) = MARKETS_WITH_LAST_PRICE_UPDATE_TIME
-        .with_borrow(|reference| reference.get(market_index).unwrap());
+    let mut market = MARKETS_LIST.with_borrow(|reference| reference.get(market_index).unwrap());
     let quote_asset = get_house_asset_pricing_details();
     let base_asset = market.index_asset_pricing_details();
 
@@ -26,8 +25,8 @@ pub async fn update_price(market_index: u64) {
     if let Ok(response) = result {
         market._update_price(response.rate, response.metadata.decimals);
         //  last_price_update_timer = time();
-        MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
-            reference.set(market_index, &(market, time()));
+        MARKETS_LIST.with_borrow_mut(|reference| {
+            reference.set(market_index, &market);
         });
     }
 }

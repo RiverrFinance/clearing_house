@@ -6,10 +6,8 @@ use crate::house_settings::{get_execution_fee, update_execution_fees_accumulated
 use crate::market::market_details::LiquidityOperationResult;
 
 use crate::pricing_update_management::price_waiting_operation_trait::PriceWaitingOperation;
-use crate::pricing_update_management::price_waiting_operation_utils::{
-    is_within_price_update_interval, put_price_waiting_operation,
-};
-use crate::stable_memory::MARKETS_WITH_LAST_PRICE_UPDATE_TIME;
+use crate::pricing_update_management::price_waiting_operation_utils::put_price_waiting_operation;
+use crate::stable_memory::MARKETS_LIST;
 use crate::user::balance_utils::{
     get_user_balance, set_user_balance, update_user_market_liquidity_shares,
 };
@@ -54,29 +52,6 @@ use crate::user::balance_utils::{
 /// - `amount` is in quote asset units (20-decimal precision)
 /// - `min_amount_out` is in market share units (20-decimal precision)
 ///
-/// # Example Usage
-///
-/// ```rust
-/// let params = AddLiquidityToMarketParams {
-///     market_index: 0,
-///     depositor: msg_caller(),
-///     amount: 10000000000000000000000, // 1.0 unit with 20 decimal places precision
-///     min_amount_out: 9500000000000000000000, // 0.95 units with 5% slippage tolerance
-/// };
-///
-/// let result = add_liquidity(params);
-/// match result {
-///     LiquidityOperationResult::Settled { amount_out } => {
-///         // Successfully added liquidity, received `amount_out` shares
-///     },
-///     LiquidityOperationResult::Waiting => {
-///         // Operation queued, will execute when price updates
-///     },
-///     LiquidityOperationResult::Failed => {
-///         // Operation failed, check balance and parameters
-///     }
-/// }
-/// ```
 #[update(name = "addLiquidity")]
 pub fn add_liquidity(params: AddLiquidityParams) -> LiquidityOperationResult {
     let depositor = msg_caller();
@@ -85,7 +60,7 @@ pub fn add_liquidity(params: AddLiquidityParams) -> LiquidityOperationResult {
 
     let result = _add_liquidity(&params);
 
-    if let LiquidityOperationResult::Waiting = result {
+    if let LiquidityOperationResult::Waiting { id: _ } = result {
         put_price_waiting_operation(
             params.market_index,
             ADD_LIQUIDITY_PRIORITY_INDEX,
@@ -136,18 +111,11 @@ pub fn _add_liquidity(params: &AddLiquidityParams) -> LiquidityOperationResult {
     let execution_fee = get_execution_fee();
 
     if user_balance < params.amount + execution_fee {
-        return LiquidityOperationResult::Failed;
+        return LiquidityOperationResult::Failed("Insufficient balance".to_string());
     }
 
-    MARKETS_WITH_LAST_PRICE_UPDATE_TIME.with_borrow_mut(|reference| {
-        let Some((mut market, last_price_update_time)) = reference.get(market_index) else {
-            return LiquidityOperationResult::Failed;
-        };
-
-        // if price check duration has been exhausted
-        if is_within_price_update_interval(last_price_update_time) == false {
-            return LiquidityOperationResult::Waiting;
-        }
+    MARKETS_LIST.with_borrow_mut(|reference| {
+        let mut market = reference.get(market_index).expect("Market does not exist");
 
         let result = market.add_liquidity_to_market((*params).into());
 
@@ -159,7 +127,7 @@ pub fn _add_liquidity(params: &AddLiquidityParams) -> LiquidityOperationResult {
 
             update_user_market_liquidity_shares(depositor, market_index, amount_out, true);
 
-            reference.set(market_index, &(market, last_price_update_time));
+            reference.set(market_index, &market);
         }
 
         return result;
