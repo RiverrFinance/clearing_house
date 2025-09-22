@@ -5,7 +5,7 @@ use ic_cdk::query;
 use ic_stable_structures::{Storable, storable::Bound};
 use serde::{Deserialize, Serialize};
 
-use crate::asset_management::AssetLedger;
+use crate::asset_management::asset_management::AssetLedger;
 use crate::pricing_update_management::price_fetch::AssetPricingDetails;
 use crate::stable_memory::HOUSE_SETTINGS;
 
