@@ -36,30 +36,14 @@ use crate::{
 /// 3. Sends the deposit transaction to the ledger
 /// 4. Updates user balance only if the transaction succeeds
 ///
-/// # Example Usage
-///
-/// ```rust
-/// let params = DepositParams {
-///     amount: 10000000000000000000000, // 1.0 unit with 20 decimal places precision
-///     block_index: Some(12345), // Optional block index for verification
-/// };
-///
-/// let success = deposit_into_account(params).await;
-/// if success {
-///     // Deposit successful, user balance updated
-/// } else {
-///     // Deposit failed, check ledger transaction
-/// }
-/// ```
+
 #[update(name = "depositIntoAccount")]
 pub async fn deposit_into_account(params: DepositParams) -> bool {
     let user = msg_caller();
 
     let house_asset_ledger = get_house_asset_ledger();
 
-    let tx_result = house_asset_ledger
-        ._send_in(params.amount, user, params.block_index)
-        .await;
+    let tx_result = house_asset_ledger._send_in(params.amount, user).await;
 
     if tx_result {
         update_user_balance(user, params.amount, true);

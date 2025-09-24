@@ -1,11 +1,8 @@
-use icrc_ledger_types::{
-    icrc1::account::Subaccount,
-    icrc2::transfer_from::{TransferFromArgs, TransferFromError},
-};
+use icrc_ledger_types::icrc1::account::Subaccount;
 // You may want to manually adjust some of the types.
 
-use candid::{self, CandidType, Decode, Deserialize, Encode, Principal};
-use ic_cdk::call::{Call, CallResult as Result};
+use candid::{self, CandidType, Deserialize, Principal};
+use ic_cdk::call::Call;
 
 #[derive(CandidType, Deserialize)]
 pub enum Mode {

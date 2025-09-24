@@ -190,6 +190,7 @@ dependencies = [
  "icrc-ledger-types",
  "primitive-types",
  "serde",
+ "sha2",
 ]
 
 [[package]]
